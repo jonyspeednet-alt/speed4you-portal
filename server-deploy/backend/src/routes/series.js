@@ -1,23 +1,40 @@
 const express = require('express');
 const router = express.Router();
 const { getItemById, listItems } = require('../data/store');
+const { Joi, validateQuery } = require('../middleware/validate');
+
+const seriesQuerySchema = Joi.object({
+  genre: Joi.string().trim().min(1).max(80),
+  year: Joi.alternatives().try(Joi.number().integer().min(1900).max(2100), Joi.string().trim().pattern(/^\d{4}$/)),
+  sort: Joi.string().valid('latest', 'popular', 'trending', 'rating', 'featured').default('latest'),
+  page: Joi.number().integer().min(1).max(100000).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(24),
+});
 
 function getSeries() {
   return listItems({ type: 'series', status: 'published' }).then((result) => result.items);
 }
 
-router.get('/', async (req, res) => {
-  const { genre, year } = req.query;
-  let filtered = await getSeries();
+router.get('/', validateQuery(seriesQuerySchema), async (req, res, next) => {
+  const { genre, year, sort, page, limit } = req.validatedQuery;
+  const filters = { type: 'series', status: 'published' };
   
-  if (genre) {
-    filtered = filtered.filter((item) => (item.genre || '').includes(genre));
+  if (genre) filters.genre = genre;
+  if (year) filters.year = year;
+
+  try {
+    const offset = (page - 1) * limit;
+    const { items, total } = await listItems(filters, offset, limit, sort);
+    res.json({
+      series: items,
+      total,
+      page,
+      limit,
+      hasMore: page * limit < total,
+    });
+  } catch (error) {
+    next(error);
   }
-  if (year) {
-    filtered = filtered.filter((item) => Number(item.year) === Number(year));
-  }
-  
-  res.json({ series: filtered, total: filtered.length });
 });
 
 router.get('/:id', async (req, res) => {

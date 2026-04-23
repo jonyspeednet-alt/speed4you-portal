@@ -6,13 +6,13 @@ const {
   getWatchlistEntries,
   removeWatchlistEntry,
 } = require('../data/store');
+const { resolveUserId, requireStateUser } = require('../middleware/resolve-user-id');
 
 function getUserId(req) {
-  const authHeader = req.headers.authorization || '';
-  return req.headers['x-user-id'] || authHeader || 'guest';
+  return req.stateUserId || resolveUserId(req);
 }
 
-router.get('/', async (req, res) => {
+router.get('/', requireStateUser, async (req, res) => {
   const userId = getUserId(req);
   const entries = await getWatchlistEntries(userId);
   const userList = [];
@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
   res.json({ items: userList, total: userList.length });
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireStateUser, async (req, res) => {
   const userId = getUserId(req);
   const { contentType, contentId } = req.body;
 
@@ -45,7 +45,7 @@ router.post('/', async (req, res) => {
   res.status(201).json({ success: true });
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireStateUser, async (req, res) => {
   const userId = getUserId(req);
   const removed = await removeWatchlistEntry(userId, req.params.id);
   if (!removed) {

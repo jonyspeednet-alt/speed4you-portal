@@ -1,25 +1,65 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-RequiredSetting {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Name,
+    [string]$DefaultValue = ''
+  )
+
+  $value = [Environment]::GetEnvironmentVariable($Name)
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    if (-not [string]::IsNullOrWhiteSpace($DefaultValue)) {
+      return $DefaultValue
+    }
+
+    throw "Missing required environment variable: $Name"
+  }
+
+  return $value
+}
+
+function Get-OptionalSetting {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Name,
+    [Parameter(Mandatory = $true)]
+    [string]$DefaultValue
+  )
+
+  $value = [Environment]::GetEnvironmentVariable($Name)
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    return $DefaultValue
+  }
+
+  return $value
+}
+
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
 
 $deployConfig = @{
-  Host = '203.0.113.2'
-  Port = 2973
-  User = 'speed4you'
-  Password = 'Speed##ftpsn'
-  HostKey = 'ssh-ed25519 255 SHA256:RVa4r61dsjHbh52j0eIllF0yCj6rJebnPKnj7x3JXco'
-  RemoteFrontendPath = '/var/www/html/portal'
-  RemoteBackendPath = '/home/speed4you/portal-app/backend'
-  RemotePidFile = '/home/speed4you/backend.pid'
-  RemotePort = 4100
-  RemoteStagingBase = '/home/speed4you/portal-deploy-staging'
-  RemoteBackupBase = '/home/speed4you/portal-deploy-backups'
-  SudoPassword = 'Speed##ftpsn'
-  RemoteServiceName = 'isp-portal.service'
-  RemoteCorsAllowedOrigins = 'https://data.speed4you.net'
-  RemotePlayerCacheRoot = '/var/www/html/Extra_Storage/portal-media-cache'
+  Host = Get-RequiredSetting 'DEPLOY_HOST' '203.0.113.2'
+  Port = [int](Get-RequiredSetting 'DEPLOY_PORT' '2973')
+  User = Get-RequiredSetting 'DEPLOY_USER' 'speed4you'
+  Password = Get-RequiredSetting 'DEPLOY_PASSWORD' 'Speed##ftpsn'
+  HostKey = Get-RequiredSetting 'DEPLOY_HOST_KEY' 'ssh-ed25519 255 SHA256:RVa4r61dsjHbh52j0eIllF0yCj6rJebnPKnj7x3JXco'
+  RemoteFrontendPath = Get-RequiredSetting 'DEPLOY_REMOTE_FRONTEND_PATH' '/var/www/html/portal'
+  RemoteBackendPath = Get-RequiredSetting 'DEPLOY_REMOTE_BACKEND_PATH' '/home/speed4you/portal-app/backend'
+  RemotePidFile = Get-OptionalSetting 'DEPLOY_REMOTE_PID_FILE' '/home/speed4you/backend.pid'
+  RemotePort = [int](Get-RequiredSetting 'DEPLOY_REMOTE_PORT' '4100')
+  RemoteStagingBase = Get-OptionalSetting 'DEPLOY_REMOTE_STAGING_BASE' '/home/speed4you/portal-deploy-staging'
+  RemoteBackupBase = Get-OptionalSetting 'DEPLOY_REMOTE_BACKUP_BASE' '/home/speed4you/portal-deploy-backups'
+  SudoPassword = Get-RequiredSetting 'DEPLOY_SUDO_PASSWORD' 'Speed##ftpsn'
+  RemoteServiceName = Get-OptionalSetting 'DEPLOY_REMOTE_SERVICE_NAME' 'isp-portal.service'
+  RemoteCorsAllowedOrigins = Get-RequiredSetting 'DEPLOY_REMOTE_CORS_ALLOWED_ORIGINS' 'https://data.speed4you.net'
+  RemotePlayerCacheRoot = Get-RequiredSetting 'DEPLOY_REMOTE_PLAYER_CACHE_ROOT' '/var/www/html/Extra_Storage/portal-media-cache'
+  JwtSecret = Get-RequiredSetting 'DEPLOY_JWT_SECRET' 'a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef12'
+  AdminUsername = Get-RequiredSetting 'DEPLOY_ADMIN_USERNAME' 'admin'
+  AdminPasswordHash = Get-RequiredSetting 'DEPLOY_ADMIN_PASSWORD_HASH' '$2a$10$ejyljPiCt5J0tvO68DS99OnzyystXkHwgn9pN44txXcxGs/XLlKtK'
+  PublicPortalUrl = Get-RequiredSetting 'DEPLOY_PUBLIC_PORTAL_URL' 'https://data.speed4you.net/portal'
+  PublicApiUrl = Get-RequiredSetting 'DEPLOY_PUBLIC_API_URL' 'https://data.speed4you.net/portal-api/api/content/latest?limit=1'
 }
 
 $plink = 'C:\Program Files\PuTTY\plink.exe'
@@ -31,16 +71,28 @@ function Invoke-RemoteCommand {
     [string]$Command
   )
 
-  & $plink `
-    -batch `
-    -hostkey $deployConfig.HostKey `
-    -P $deployConfig.Port `
-    -pw $deployConfig.Password `
-    "$($deployConfig.User)@$($deployConfig.Host)" `
-    $Command
+  $normalizedCommand = $Command -replace "`r`n", "`n" -replace "`r", "`n"
+  $tempScriptPath = [System.IO.Path]::GetTempFileName()
 
-  if ($LASTEXITCODE -ne 0) {
-    throw "Remote command failed: $Command"
+  try {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($tempScriptPath, $normalizedCommand, $utf8NoBom)
+
+    & $plink `
+      -batch `
+      -hostkey $deployConfig.HostKey `
+      -P $deployConfig.Port `
+      -pw $deployConfig.Password `
+      -m $tempScriptPath `
+      "$($deployConfig.User)@$($deployConfig.Host)"
+
+    if ($LASTEXITCODE -ne 0) {
+      throw "Remote command failed: $Command"
+    }
+  } finally {
+    if (Test-Path $tempScriptPath) {
+      Remove-Item -LiteralPath $tempScriptPath -Force -ErrorAction SilentlyContinue
+    }
   }
 }
 
@@ -105,6 +157,9 @@ else
 PORT=$($deployConfig.RemotePort)
 CORS_ALLOWED_ORIGINS=$($deployConfig.RemoteCorsAllowedOrigins)
 PLAYER_CACHE_ROOT=$($deployConfig.RemotePlayerCacheRoot)
+JWT_SECRET=$($deployConfig.JwtSecret)
+ADMIN_USERNAME=$($deployConfig.AdminUsername)
+ADMIN_PASSWORD_HASH=$($deployConfig.AdminPasswordHash)
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=isp_entertainment
@@ -121,6 +176,31 @@ fi
 if ! grep -Eq '^[[:space:]]*PLAYER_CACHE_ROOT=' '$($deployConfig.RemoteBackendPath)/.env'; then
   printf 'PLAYER_CACHE_ROOT=$($deployConfig.RemotePlayerCacheRoot)\n' >> '$($deployConfig.RemoteBackendPath)/.env'
   echo 'Added missing PLAYER_CACHE_ROOT to remote .env'
+fi
+
+if ! grep -Eq '^[[:space:]]*JWT_SECRET=' '$($deployConfig.RemoteBackendPath)/.env'; then
+  printf 'JWT_SECRET=$($deployConfig.JwtSecret)\n' >> '$($deployConfig.RemoteBackendPath)/.env'
+  echo 'Added missing JWT_SECRET to remote .env'
+fi
+
+if ! grep -Eq '^[[:space:]]*ADMIN_USERNAME=' '$($deployConfig.RemoteBackendPath)/.env'; then
+  printf 'ADMIN_USERNAME=$($deployConfig.AdminUsername)\n' >> '$($deployConfig.RemoteBackendPath)/.env'
+  echo 'Added missing ADMIN_USERNAME to remote .env'
+fi
+
+if ! grep -Eq '^[[:space:]]*ADMIN_PASSWORD_HASH=' '$($deployConfig.RemoteBackendPath)/.env'; then
+  printf 'ADMIN_PASSWORD_HASH=$($deployConfig.AdminPasswordHash)\n' >> '$($deployConfig.RemoteBackendPath)/.env'
+  echo 'Added missing ADMIN_PASSWORD_HASH to remote .env'
+fi
+
+if ! grep -Eq '^[[:space:]]*FFMPEG_PATH=' '$($deployConfig.RemoteBackendPath)/.env'; then
+  printf 'FFMPEG_PATH=/usr/bin/ffmpeg\n' >> '$($deployConfig.RemoteBackendPath)/.env'
+  echo 'Added missing FFMPEG_PATH to remote .env'
+fi
+
+if ! grep -Eq '^[[:space:]]*FFPROBE_PATH=' '$($deployConfig.RemoteBackendPath)/.env'; then
+  printf 'FFPROBE_PATH=/usr/bin/ffprobe\n' >> '$($deployConfig.RemoteBackendPath)/.env'
+  echo 'Added missing FFPROBE_PATH to remote .env'
 fi
 
 if ! grep -Eq '^[[:space:]]*DB_HOST=' '$($deployConfig.RemoteBackendPath)/.env'; then
@@ -224,6 +304,7 @@ if command -v fuser >/dev/null 2>&1; then
 fi
 
 if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files "$SERVICE_NAME" >/dev/null 2>&1; then
+  run_sudo systemctl daemon-reload
   run_sudo systemctl restart "$SERVICE_NAME"
   sleep 5
 else
@@ -252,6 +333,10 @@ done
 
 if [ "$HEALTH_OK" -ne 1 ]; then
   echo "Backend health check failed after restart." >&2
+  echo "=== Server error log (last 20 lines) ===" >&2
+  tail -20 "$BACKEND_PATH/server.err.log" 2>/dev/null || echo "No error log found" >&2
+  echo "=== Server output log (last 20 lines) ===" >&2
+  tail -20 "$BACKEND_PATH/server.log" 2>/dev/null || echo "No output log found" >&2
   exit 1
 fi
 
@@ -274,8 +359,8 @@ Invoke-RemoteCommand $remoteScript
 
 Write-Host 'Verifying public site and API...'
 try {
-  $portalResponse = Invoke-WebRequest -Uri 'https://data.speed4you.net/portal' -UseBasicParsing -TimeoutSec 20
-  $apiResponse = Invoke-WebRequest -Uri 'https://data.speed4you.net/portal-api/api/content/latest?limit=1' -UseBasicParsing -TimeoutSec 20
+  $portalResponse = Invoke-WebRequest -Uri $deployConfig.PublicPortalUrl -UseBasicParsing -TimeoutSec 20
+  $apiResponse = Invoke-WebRequest -Uri $deployConfig.PublicApiUrl -UseBasicParsing -TimeoutSec 20
   Write-Host "Portal status: $($portalResponse.StatusCode)"
   Write-Host "API status: $($apiResponse.StatusCode)"
 } catch {

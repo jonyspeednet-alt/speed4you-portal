@@ -1,4 +1,4 @@
-import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import { authService } from '../services';
 import { useBreakpoint } from '../hooks';
@@ -67,8 +67,10 @@ function getSectionMeta(pathname) {
 
 function AdminLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [authState, setAuthState] = useState(() => (localStorage.getItem('token') ? 'checking' : 'unauthenticated'));
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [quickSearch, setQuickSearch] = useState('');
   const { isMobile } = useBreakpoint();
   const [user] = useState(() => {
     const storedUser = localStorage.getItem('user');
@@ -84,6 +86,17 @@ function AdminLayout() {
   });
 
   const sectionMeta = useMemo(() => getSectionMeta(location.pathname), [location.pathname]);
+  const filteredNavItems = useMemo(() => {
+    const query = quickSearch.trim().toLowerCase();
+    if (!query) {
+      return adminNavItems;
+    }
+    return adminNavItems.filter((item) => (
+      item.label.toLowerCase().includes(query)
+      || item.hint.toLowerCase().includes(query)
+      || item.path.toLowerCase().includes(query)
+    ));
+  }, [quickSearch]);
 
   useEffect(() => {
     if (authState !== 'checking') {
@@ -98,6 +111,20 @@ function AdminLayout() {
         setAuthState('unauthenticated');
       });
   }, [authState]);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        const search = document.getElementById('admin-quick-search');
+        search?.focus();
+        search?.select?.();
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const handleLogout = () => {
     authService.logout().catch(() => null).finally(() => {
@@ -158,7 +185,7 @@ function AdminLayout() {
             </div>
 
             <nav style={styles.nav}>
-              {adminNavItems.map((item) => {
+              {filteredNavItems.map((item) => {
                 const active = location.pathname === item.path || (item.path !== '/admin' && location.pathname.startsWith(item.path));
                 return (
                   <Link
@@ -178,6 +205,9 @@ function AdminLayout() {
                   </Link>
                 );
               })}
+              {!filteredNavItems.length ? (
+                <div style={styles.emptyNav}>No section matched.</div>
+              ) : null}
             </nav>
 
             <div style={styles.bottom}>
@@ -204,6 +234,24 @@ function AdminLayout() {
 
             <div style={styles.headerAside}>
               <div style={styles.headerBadge}>{sectionMeta.badge}</div>
+              <label style={styles.quickSearchWrap}>
+                <input
+                  id="admin-quick-search"
+                  type="text"
+                  value={quickSearch}
+                  onChange={(event) => setQuickSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && filteredNavItems.length) {
+                      navigate(filteredNavItems[0].path);
+                      if (isMobile) {
+                        setSidebarOpen(false);
+                      }
+                    }
+                  }}
+                  placeholder="Quick jump... (Ctrl/Cmd+K)"
+                  style={styles.quickSearchInput}
+                />
+              </label>
               <div style={styles.headerMiniGrid}>
                 <Link to="/admin/content/new" style={styles.quickBtn}>Quick Add</Link>
                 <Link to="/admin/content" style={styles.quickBtnSecondary}>Library</Link>
@@ -418,6 +466,13 @@ const styles = {
     color: 'var(--text-muted)',
     fontSize: '0.76rem',
   },
+  emptyNav: {
+    padding: '12px 14px',
+    borderRadius: '14px',
+    background: 'rgba(255,255,255,0.04)',
+    color: 'var(--text-muted)',
+    fontSize: '0.82rem',
+  },
   bottom: {
     paddingTop: '16px',
     borderTop: '1px solid rgba(255,255,255,0.08)',
@@ -493,6 +548,19 @@ const styles = {
     display: 'grid',
     gap: '12px',
     justifyItems: 'end',
+  },
+  quickSearchWrap: {
+    width: '100%',
+    maxWidth: '320px',
+  },
+  quickSearchInput: {
+    width: '100%',
+    padding: '11px 14px',
+    borderRadius: '999px',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    color: 'var(--text-primary)',
+    fontSize: '0.86rem',
   },
   headerBadge: {
     padding: '12px 16px',

@@ -71,8 +71,13 @@ app.use(cors({
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
 app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+app.use((req, res, next) => {
+  req.requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  res.setHeader('X-Request-Id', req.requestId);
+  next();
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -118,10 +123,39 @@ if (fs.existsSync(frontendDistPath)) {
   });
 }
 
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({
+      ok: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'API route not found',
+      },
+      requestId: req.requestId || '',
+    });
+  }
+
+  return next();
+});
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
+  const isPayloadTooLarge = err?.code === 'LIMIT_FILE_SIZE';
+  const statusCode = Number(err.status || err.statusCode || (isPayloadTooLarge ? 413 : 500));
+  const code = isPayloadTooLarge
+    ? 'PAYLOAD_TOO_LARGE'
+    : (err.code || (statusCode === 400 ? 'BAD_REQUEST' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_SERVER_ERROR'));
+  const message = isPayloadTooLarge
+    ? 'Uploaded file exceeds configured size limit'
+    : (err.message || 'Internal Server Error');
+  res.status(statusCode).json({
+    ok: false,
+    error: {
+      code,
+      message,
+      details: Array.isArray(err.details) ? err.details : undefined,
+    },
+    requestId: req.requestId || '',
   });
 });
 

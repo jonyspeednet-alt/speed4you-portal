@@ -1,6 +1,8 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
+const db = require('../config/database');
 const requireAdminAuth = require('../middleware/require-admin-auth');
 const {
   createItem,
@@ -14,7 +16,7 @@ const {
   loadScannerRoots,
   updateItem,
 } = require('../data/store');
-const { getCurrentScanJob, getScannerHealth, startScanJob } = require('../services/scanner');
+const { getCurrentScanJob, getScannerHealth, startScanJob, stopScanJob } = require('../services/scanner');
 const { fetchMetadataByTmdbId } = require('../services/metadata-enricher');
 const {
   getMediaNormalizerStatus,
@@ -28,6 +30,13 @@ const {
 
 const router = express.Router();
 router.use(requireAdminAuth);
+const MAX_UPLOAD_BYTES = Number(process.env.ADMIN_UPLOAD_MAX_BYTES || 1024 * 1024);
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: MAX_UPLOAD_BYTES,
+  },
+});
 
 function asyncRoute(handler) {
   return (req, res, next) => {
@@ -67,6 +76,14 @@ function saveDataUrlAsset(dataUrl, folder = 'images') {
   if (!extension) {
     throw new Error('Unsupported image type.');
   }
+  const base64Payload = String(match[2] || '');
+  const payloadBytes = Buffer.byteLength(base64Payload, 'base64');
+  if (!Number.isFinite(payloadBytes) || payloadBytes <= 0) {
+    throw new Error('Invalid image payload.');
+  }
+  if (payloadBytes > MAX_UPLOAD_BYTES) {
+    throw new Error(`Image is too large. Max size is ${MAX_UPLOAD_BYTES} bytes.`);
+  }
 
   const uploadRoot = resolveUploadDirectory();
   const targetDir = path.join(uploadRoot, folder);
@@ -74,9 +91,83 @@ function saveDataUrlAsset(dataUrl, folder = 'images') {
 
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${extension}`;
   const absolutePath = path.join(targetDir, filename);
-  fs.writeFileSync(absolutePath, Buffer.from(match[2], 'base64'));
+  fs.writeFileSync(absolutePath, Buffer.from(base64Payload, 'base64'));
 
   return `/portal/uploads/${folder}/${filename}`;
+}
+
+function saveBufferAsset(file, folder = 'images') {
+  const mimeType = String(file?.mimetype || '').toLowerCase();
+  const extensionMap = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+    'image/svg+xml': '.svg',
+  };
+  const extension = extensionMap[mimeType];
+  if (!extension) {
+    throw new Error('Unsupported image type.');
+  }
+
+  const size = Number(file?.size || 0);
+  if (!Number.isFinite(size) || size <= 0) {
+    throw new Error('Invalid image payload.');
+  }
+  if (size > MAX_UPLOAD_BYTES) {
+    throw new Error(`Image is too large. Max size is ${MAX_UPLOAD_BYTES} bytes.`);
+  }
+
+  const uploadRoot = resolveUploadDirectory();
+  const targetDir = path.join(uploadRoot, folder);
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${extension}`;
+  const absolutePath = path.join(targetDir, filename);
+  fs.writeFileSync(absolutePath, file.buffer);
+
+  return `/portal/uploads/${folder}/${filename}`;
+}
+
+function toSummaryItem(item) {
+  return {
+    id: item.id,
+    title: item.title,
+    type: item.type,
+    status: item.status,
+    sourceType: item.sourceType,
+    sourceRootId: item.sourceRootId || '',
+    sourceRootLabel: item.sourceRootLabel || '',
+    sourcePath: item.sourcePath || '',
+    language: item.language || '',
+    category: item.category || '',
+    collection: item.collection || '',
+    tags: Array.isArray(item.tags) ? item.tags : [],
+    year: item.year || null,
+    metadataStatus: item.metadataStatus || 'pending',
+    metadataConfidence: Number(item.metadataConfidence || 0),
+    metadataUpdatedAt: item.metadataUpdatedAt || '',
+    duplicateCount: Number(item.duplicateCount || 0),
+    duplicateCandidates: Array.isArray(item.duplicateCandidates) ? item.duplicateCandidates : [],
+    featured: Boolean(item.featured),
+    featuredOrder: Number(item.featuredOrder || 0),
+    trendingScore: Number(item.trendingScore || 0),
+    adminNotes: item.adminNotes || '',
+    poster: item.poster || '',
+    videoUrl: item.videoUrl || '',
+    updatedAt: item.updatedAt || '',
+  };
+}
+
+function withSummaryResult(result, summaryRequested) {
+  if (!summaryRequested) {
+    return result;
+  }
+
+  return {
+    ...result,
+    items: (result.items || []).map(toSummaryItem),
+  };
 }
 
 router.get('/dashboard', asyncRoute(async (req, res) => {
@@ -97,12 +188,23 @@ router.get('/stats', asyncRoute(async (req, res) => {
 }));
 
 router.get('/content', asyncRoute(async (req, res) => {
-  const { status, type, source, sourceRootId, language, category, collection, tag, search, page, limit } = req.query;
+  const { status, type, source, sourceRootId, language, category, collection, tag, search, page, limit, summary, duplicatesOnly } = req.query;
   const pageNum = Number(page) || 1;
   const limitNum = Number(limit) || 50;
   const offset = (pageNum - 1) * limitNum;
-  const result = await listItems({ status, type, source, sourceRootId, language, category, collection, tag, search }, offset, limitNum);
-  res.json(result);
+  const result = await listItems({
+    status,
+    type,
+    source,
+    sourceRootId,
+    language,
+    category,
+    collection,
+    tag,
+    search,
+    duplicatesOnly: String(duplicatesOnly) === 'true',
+  }, offset, limitNum);
+  res.json(withSummaryResult(result, String(summary) === 'true'));
 }));
 
 router.get('/content/organization', asyncRoute(async (req, res) => {
@@ -184,35 +286,61 @@ router.post('/content/:id/unpublish', asyncRoute(async (req, res) => {
 }));
 
 router.get('/movies', asyncRoute(async (req, res) => {
-  const { status, source, sourceRootId, language, category, collection, tag, search, page, limit } = req.query;
+  const { status, source, sourceRootId, language, category, collection, tag, search, page, limit, summary, duplicatesOnly } = req.query;
   const pageNum = Number(page) || 1;
   const limitNum = Number(limit) || 50;
   const offset = (pageNum - 1) * limitNum;
-  const result = await listItems({ type: 'movie', status, source, sourceRootId, language, category, collection, tag, search }, offset, limitNum);
-  res.json(result);
+  const result = await listItems({
+    type: 'movie',
+    status,
+    source,
+    sourceRootId,
+    language,
+    category,
+    collection,
+    tag,
+    search,
+    duplicatesOnly: String(duplicatesOnly) === 'true',
+  }, offset, limitNum);
+  res.json(withSummaryResult(result, String(summary) === 'true'));
 }));
 
 router.get('/series', asyncRoute(async (req, res) => {
-  const { status, source, sourceRootId, language, category, collection, tag, search, page, limit } = req.query;
+  const { status, source, sourceRootId, language, category, collection, tag, search, page, limit, summary, duplicatesOnly } = req.query;
   const pageNum = Number(page) || 1;
   const limitNum = Number(limit) || 50;
   const offset = (pageNum - 1) * limitNum;
-  const result = await listItems({ type: 'series', status, source, sourceRootId, language, category, collection, tag, search }, offset, limitNum);
-  res.json(result);
+  const result = await listItems({
+    type: 'series',
+    status,
+    source,
+    sourceRootId,
+    language,
+    category,
+    collection,
+    tag,
+    search,
+    duplicatesOnly: String(duplicatesOnly) === 'true',
+  }, offset, limitNum);
+  res.json(withSummaryResult(result, String(summary) === 'true'));
 }));
 
-router.post('/upload/poster', (req, res) => {
+router.post('/upload/poster', upload.single('file'), (req, res) => {
   try {
-    const assetUrl = saveDataUrlAsset(req.body?.dataUrl, 'posters');
+    const assetUrl = req.file
+      ? saveBufferAsset(req.file, 'posters')
+      : saveDataUrlAsset(req.body?.dataUrl, 'posters');
     res.status(201).json({ url: assetUrl });
   } catch (error) {
     res.status(400).json({ error: error.message || 'Poster upload failed.' });
   }
 });
 
-router.post('/upload/banner', (req, res) => {
+router.post('/upload/banner', upload.single('file'), (req, res) => {
   try {
-    const assetUrl = saveDataUrlAsset(req.body?.dataUrl, 'banners');
+    const assetUrl = req.file
+      ? saveBufferAsset(req.file, 'banners')
+      : saveDataUrlAsset(req.body?.dataUrl, 'banners');
     res.status(201).json({ url: assetUrl });
   } catch (error) {
     res.status(400).json({ error: error.message || 'Banner upload failed.' });
@@ -252,6 +380,28 @@ router.post('/scanner/run', (req, res) => {
   const job = startScanJob(rootIds);
   res.status(202).json({ job });
 });
+
+router.post('/scanner/stop', (req, res) => {
+  const job = stopScanJob();
+  res.status(202).json({ job });
+});
+
+router.get('/db/health', asyncRoute(async (req, res) => {
+  const [sizeResult] = await Promise.all([
+    db.query('SELECT pg_size_pretty(pg_database_size(current_database())) AS size_pretty'),
+  ]);
+
+  res.json({
+    checkedAt: new Date().toISOString(),
+    database: process.env.DB_NAME || 'isp_entertainment',
+    pool: {
+      total: db.pool.totalCount,
+      idle: db.pool.idleCount,
+      waiting: db.pool.waitingCount,
+    },
+    databaseSize: sizeResult.rows[0]?.size_pretty || 'unknown',
+  });
+}));
 
 router.get('/media-normalizer/status', asyncRoute(async (req, res) => {
   res.json(await getMediaNormalizerStatus());

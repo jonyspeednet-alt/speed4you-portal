@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { adminService } from '../../services';
 import { useBreakpoint } from '../../hooks';
 
@@ -14,17 +14,26 @@ const AdminDashboard = () => {
   const [normalizer, setNormalizer] = useState({ running: false, state: null, recentLogLines: [] });
   const [normalizerBusy, setNormalizerBusy] = useState(false);
   const [normalizerError, setNormalizerError] = useState('');
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState('');
+
+  const loadDashboard = useCallback(async () => {
+    try {
+      setDashboardLoading(true);
+      const response = await adminService.getDashboard();
+      setDashboard(response);
+      setError('');
+      setLastUpdated(new Date().toISOString());
+    } catch (loadError) {
+      setError(loadError.message || 'Failed to load admin dashboard.');
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    adminService.getDashboard()
-      .then((response) => {
-        setDashboard(response);
-        setError('');
-      })
-      .catch((loadError) => {
-        setError(loadError.message || 'Failed to load admin dashboard.');
-      });
-  }, []);
+    loadDashboard();
+  }, [loadDashboard]);
 
   useEffect(() => {
     let active = true;
@@ -101,7 +110,11 @@ const AdminDashboard = () => {
         <div style={styles.heroActions}>
           <Link to="/admin/content/new" style={styles.primaryAction}>Add New Content</Link>
           <Link to="/admin/content" style={styles.secondaryAction}>Open Content Library</Link>
+          <button type="button" style={styles.secondaryAction} onClick={loadDashboard} disabled={dashboardLoading}>
+            {dashboardLoading ? 'Refreshing...' : 'Refresh Dashboard'}
+          </button>
         </div>
+        <span style={styles.kicker}>Last sync: {lastUpdated ? formatSeconds((Date.now() - Date.parse(lastUpdated)) / 1000) : 'now'}</span>
       </section>
 
       {error ? <div style={styles.errorBox}>{error}</div> : null}
@@ -110,7 +123,7 @@ const AdminDashboard = () => {
         {stats.map((stat) => (
           <div key={stat.label} style={styles.statCard}>
             <span style={styles.statLabel}>{stat.label}</span>
-            <span style={styles.statValue}>{stat.value}</span>
+            <span style={styles.statValue}>{dashboardLoading ? '...' : stat.value}</span>
             <span style={styles.statChange}>{stat.change}</span>
           </div>
         ))}

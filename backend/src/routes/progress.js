@@ -6,13 +6,13 @@ const {
   markWatchProgressComplete,
   upsertWatchProgress,
 } = require('../data/store');
+const { resolveUserId, requireStateUser } = require('../middleware/resolve-user-id');
 
 function getUserId(req) {
-  const authHeader = req.headers.authorization || '';
-  return req.headers['x-user-id'] || authHeader || 'guest';
+  return req.stateUserId || resolveUserId(req);
 }
 
-router.get('/', async (req, res) => {
+router.get('/', requireStateUser, async (req, res) => {
   const userId = getUserId(req);
   const entries = await getWatchProgressEntries(userId, { incompleteOnly: true });
   const userProgress = [];
@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
   res.json({ items: userProgress });
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireStateUser, async (req, res) => {
   const userId = getUserId(req);
   const { contentType, contentId, position, duration } = req.body;
 
@@ -50,19 +50,19 @@ async function buildContinueWatching(userId) {
   return items;
 }
 
-router.get('/continue-watching', async (req, res) => {
+router.get('/continue-watching', requireStateUser, async (req, res) => {
   const userId = getUserId(req);
   res.json({ items: await buildContinueWatching(userId) });
 });
 
-router.get('/continue-watching/list', async (req, res) => {
+router.get('/continue-watching/list', requireStateUser, async (req, res) => {
   const userId = getUserId(req);
   const items = await buildContinueWatching(userId);
 
   res.json({ items });
 });
 
-router.post('/complete', async (req, res) => {
+router.post('/complete', requireStateUser, async (req, res) => {
   const userId = getUserId(req);
   const { contentType, contentId } = req.body;
   await markWatchProgressComplete(userId, { contentType, contentId });
@@ -70,7 +70,7 @@ router.post('/complete', async (req, res) => {
   res.json({ success: true });
 });
 
-router.get('/:contentType/:contentId', async (req, res) => {
+router.get('/:contentType/:contentId', requireStateUser, async (req, res) => {
   const userId = getUserId(req);
   const { contentType, contentId } = req.params;
   const [item] = await getWatchProgressEntries(userId, { contentType, contentId });

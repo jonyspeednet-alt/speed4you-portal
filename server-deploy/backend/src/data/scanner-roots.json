@@ -6,7 +6,9 @@
     "scanPath": "/var/www/html/English Movies",
     "publicBaseUrl": "/English%20Movies",
     "language": "English",
-    "category": "English Movies"
+    "category": "English Movies",
+    "maxDepth": 6,
+    "batchSize": 40
   },
   {
     "id": "bangla-movies",
@@ -15,7 +17,9 @@
     "scanPath": "/var/www/html/Bangla Movies",
     "publicBaseUrl": "/Bangla%20Movies",
     "language": "Bengali",
-    "category": "Bangla Movies"
+    "category": "Bangla Movies",
+    "maxDepth": 6,
+    "batchSize": 40
   },
   {
     "id": "hindi-movies",
@@ -24,7 +28,9 @@
     "scanPath": "/var/www/html/Hindi Movies",
     "publicBaseUrl": "/Hindi%20Movies",
     "language": "Hindi",
-    "category": "Hindi Movies"
+    "category": "Hindi Movies",
+    "maxDepth": 6,
+    "batchSize": 40
   },
   {
     "id": "hindi-dubbed-movies",
@@ -33,7 +39,9 @@
     "scanPath": "/var/www/html/Hindi Dubbed Movies",
     "publicBaseUrl": "/Hindi%20Dubbed%20Movies",
     "language": "Hindi",
-    "category": "Hindi Dubbed Movies"
+    "category": "Hindi Dubbed Movies",
+    "maxDepth": 6,
+    "batchSize": 40
   },
   {
     "id": "animation-movies",
@@ -42,7 +50,9 @@
     "scanPath": "/var/www/html/Animation_Movies",
     "publicBaseUrl": "/Animation_Movies",
     "language": "English",
-    "category": "Animation Movies"
+    "category": "Animation Movies",
+    "maxDepth": 6,
+    "batchSize": 40
   },
   {
     "id": "series-a-e",
@@ -51,7 +61,8 @@
     "scanPath": "/var/www/html/TV_Series/TV_Web_Series-0-9_A-E",
     "publicBaseUrl": "/TV_Series/TV_Web_Series-0-9_A-E",
     "language": "English",
-    "category": "TV Series"
+    "category": "TV Series",
+    "batchSize": 30
   },
   {
     "id": "series-f-m",
@@ -60,7 +71,8 @@
     "scanPath": "/var/www/html/TV_Series/TV_Web_Series-F-M",
     "publicBaseUrl": "/TV_Series/TV_Web_Series-F-M",
     "language": "English",
-    "category": "TV Series"
+    "category": "TV Series",
+    "batchSize": 30
   },
   {
     "id": "series-n-s",
@@ -69,7 +81,8 @@
     "scanPath": "/var/www/html/TV_Series/TV_Web_Series-N-S",
     "publicBaseUrl": "/TV_Series/TV_Web_Series-N-S",
     "language": "English",
-    "category": "TV Series"
+    "category": "TV Series",
+    "batchSize": 30
   },
   {
     "id": "series-t",
@@ -78,7 +91,8 @@
     "scanPath": "/var/www/html/TV_Series/TV_Web_Series-T",
     "publicBaseUrl": "/TV_Series/TV_Web_Series-T",
     "language": "English",
-    "category": "TV Series"
+    "category": "TV Series",
+    "batchSize": 30
   },
   {
     "id": "series-u-z",
@@ -87,7 +101,8 @@
     "scanPath": "/var/www/html/TV_Series/TV_Web_Series-U-Z",
     "publicBaseUrl": "/TV_Series/TV_Web_Series-U-Z",
     "language": "English",
-    "category": "TV Series"
+    "category": "TV Series",
+    "batchSize": 30
   },
   {
     "id": "english-tv-series",
@@ -96,6 +111,7 @@
     "scanPath": "/var/www/html/TV_Series/English TV_Series",
     "publicBaseUrl": "/TV_Series/English%20TV_Series",
     "language": "English",
-    "category": "TV Series"
+    "category": "TV Series",
+    "batchSize": 30
   }
 ]

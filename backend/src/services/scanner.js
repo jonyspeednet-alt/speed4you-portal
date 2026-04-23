@@ -17,7 +17,12 @@ const {
 } = require('../data/store');
 const { enrichItemWithMetadata } = require('./metadata-enricher');
 
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.m4v', '.webm']);
+const VIDEO_EXTENSIONS = new Set(
+  String(process.env.SCANNER_VIDEO_EXTENSIONS || '.mp4,.mkv,.avi,.mov,.wmv,.m4v,.webm,.ts,.m2ts,.mpg,.mpeg,.3gp,.flv,.vob')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean),
+);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 const DUPLICATE_HOLD_DIR_NAME = process.env.MEDIA_NORMALIZER_DUPLICATE_DIR || '_duplicate_hold';
 const PREFERRED_POSTER_PATTERNS = [
@@ -25,8 +30,11 @@ const PREFERRED_POSTER_PATTERNS = [
   /(poster|cover|folder|front)/i,
   /(backdrop|banner|fanart)/i,
 ];
-const DEFAULT_MOVIE_DEPTH = 1;
+const DEFAULT_MOVIE_DEPTH = Math.max(1, Number(process.env.SCANNER_DEFAULT_MOVIE_DEPTH || 6));
 const DEFAULT_BATCH_SIZE = 25;
+const DEFAULT_MEDIA_LIBRARY_ROOT = process.env.SCANNER_MEDIA_ROOT || '/var/www/html';
+const ENABLE_AUTO_DISCOVER_ROOTS = process.env.SCANNER_AUTO_DISCOVER_ROOTS !== 'false';
+const SKIP_DISCOVERY_NAMES = new Set(['portal', 'uploads', 'assets', 'css', 'js', 'api']);
 
 let currentScanJob = null;
 let currentScanChild = null;
@@ -210,6 +218,98 @@ function listDirectoryEntries(dirPath) {
   } catch {
     return [];
   }
+}
+
+function normalizePathForCompare(input) {
+  return String(input || '').replace(/[\\/]+/g, '/').toLowerCase();
+}
+
+function shouldSkipDiscoveryDir(name) {
+  const normalized = String(name || '').trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  if (SKIP_DISCOVERY_NAMES.has(normalized)) {
+    return true;
+  }
+  return normalized.startsWith('.');
+}
+
+function hasVideoInTree(rootPath, maxDepth = 3) {
+  const queue = [{ folderPath: rootPath, depth: 0 }];
+  while (queue.length) {
+    const current = queue.shift();
+    const entries = listDirectoryEntries(current.folderPath);
+    for (const entry of entries) {
+      const absolutePath = path.join(current.folderPath, entry.name);
+      if (entry.isFile() && VIDEO_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+        return true;
+      }
+      if (entry.isDirectory() && current.depth < maxDepth) {
+        queue.push({ folderPath: absolutePath, depth: current.depth + 1 });
+      }
+    }
+  }
+  return false;
+}
+
+function inferRootType(label, scanPath) {
+  const source = `${label} ${scanPath}`.toLowerCase();
+  if (/\b(tv|series|season|episode|web series)\b/.test(source)) {
+    return 'series';
+  }
+  return 'movie';
+}
+
+function discoverScannerRoots() {
+  if (!ENABLE_AUTO_DISCOVER_ROOTS || !fs.existsSync(DEFAULT_MEDIA_LIBRARY_ROOT)) {
+    return [];
+  }
+
+  const topDirs = listDirectories(DEFAULT_MEDIA_LIBRARY_ROOT);
+  const discovered = [];
+  for (const dirName of topDirs) {
+    if (shouldSkipDiscoveryDir(dirName)) {
+      continue;
+    }
+    const absolutePath = path.join(DEFAULT_MEDIA_LIBRARY_ROOT, dirName);
+    if (!hasVideoInTree(absolutePath, 3)) {
+      continue;
+    }
+    const type = inferRootType(dirName, absolutePath);
+    discovered.push({
+      id: `auto-${slugify(dirName)}`,
+      label: `Auto: ${cleanTitle(dirName)}`,
+      type,
+      scanPath: absolutePath,
+      publicBaseUrl: `/${encodeURIComponent(dirName).replace(/%2F/g, '/')}`,
+      language: type === 'series' ? 'English' : 'Unknown',
+      category: type === 'series' ? 'TV Series' : 'Auto Movies',
+      maxDepth: type === 'movie' ? DEFAULT_MOVIE_DEPTH : 2,
+      batchSize: type === 'movie' ? 40 : 30,
+      discovered: true,
+    });
+  }
+  return discovered;
+}
+
+function getEffectiveRoots() {
+  const configured = loadScannerRoots().map((root) => ({
+    ...root,
+    maxDepth: root.maxDepth ?? (root.type === 'movie' ? DEFAULT_MOVIE_DEPTH : 1),
+    batchSize: root.batchSize ?? DEFAULT_BATCH_SIZE,
+    discovered: false,
+  }));
+  const discovered = discoverScannerRoots();
+
+  const configuredPathSet = new Set(configured.map((root) => normalizePathForCompare(root.scanPath)));
+  const merged = [...configured];
+  for (const root of discovered) {
+    if (!configuredPathSet.has(normalizePathForCompare(root.scanPath))) {
+      merged.push(root);
+    }
+  }
+  return merged;
 }
 
 function listDirectories(dirPath) {
@@ -792,6 +892,8 @@ async function processSeriesRoot(root, summary, progressCallback, scanContext) {
 
 function summarizeRoot(root) {
   const pathAssessment = assessScanPath(root.scanPath);
+  const effectiveMaxDepth = root.maxDepth ?? (root.type === 'movie' ? DEFAULT_MOVIE_DEPTH : 1);
+  const effectiveBatchSize = root.batchSize ?? DEFAULT_BATCH_SIZE;
   const state = loadRootState(root.id);
   const entry = {
     id: root.id,
@@ -806,6 +908,9 @@ function summarizeRoot(root) {
     fileCount: 0,
     videoCount: 0,
     imageCount: 0,
+    estimatedCandidates: 0,
+    maxDepth: effectiveMaxDepth,
+    batchSize: effectiveBatchSize,
     lastCompletedAt: state.lastCompletedAt || '',
     cachedFolders: Object.keys(state.folders || {}).length,
     error: pathAssessment.error,
@@ -821,6 +926,11 @@ function summarizeRoot(root) {
     entry.fileCount = topEntries.filter((item) => item.isFile()).length;
     entry.videoCount = topEntries.filter((item) => item.isFile() && VIDEO_EXTENSIONS.has(path.extname(item.name).toLowerCase())).length;
     entry.imageCount = topEntries.filter((item) => item.isFile() && IMAGE_EXTENSIONS.has(path.extname(item.name).toLowerCase())).length;
+    if (root.type === 'movie') {
+      entry.estimatedCandidates = collectDirectoriesIncrementally(root.scanPath, effectiveMaxDepth).length;
+    } else {
+      entry.estimatedCandidates = listDirectories(root.scanPath).length;
+    }
   } catch (error) {
     entry.error = error.message;
   }
@@ -829,7 +939,7 @@ function summarizeRoot(root) {
 }
 
 function getScannerHealth() {
-  const roots = loadScannerRoots().map(summarizeRoot);
+  const roots = getEffectiveRoots().map(summarizeRoot);
   const runs = getScannerRuns(10);
   const healthyRoots = roots.filter((root) => root.checkable && root.exists && !root.error).length;
   const brokenRoots = roots.filter((root) => root.checkable && !root.exists).length;
@@ -848,14 +958,10 @@ function getScannerHealth() {
 }
 
 async function scanSelectedRoots(selectedRootIds = [], progressCallback, options = {}) {
-  const configuredRoots = loadScannerRoots().map((root) => ({
-    ...root,
-    maxDepth: root.maxDepth ?? (root.type === 'movie' ? DEFAULT_MOVIE_DEPTH : 1),
-    batchSize: root.batchSize ?? DEFAULT_BATCH_SIZE,
-  }));
+  const effectiveRoots = getEffectiveRoots();
   const roots = selectedRootIds.length
-    ? configuredRoots.filter((root) => selectedRootIds.includes(root.id))
-    : configuredRoots;
+    ? effectiveRoots.filter((root) => selectedRootIds.includes(root.id))
+    : effectiveRoots;
 
   const summary = createSummary(roots);
   const scanContext = {
@@ -996,7 +1102,7 @@ function startScanJob(selectedRootIds = []) {
     completedAt: '',
     updatedAt: new Date().toISOString(),
     rootIds,
-    summary: createSummary(loadScannerRoots().filter((root) => !rootIds.length || rootIds.includes(root.id))),
+    summary: createSummary(getEffectiveRoots().filter((root) => !rootIds.length || rootIds.includes(root.id))),
     error: '',
   };
   void updateRuntimeJob(currentScanJob);
@@ -1013,6 +1119,31 @@ function startScanJob(selectedRootIds = []) {
 
   attachChildHandlers(child);
   return currentScanJob;
+}
+
+function stopScanJob() {
+  if (!currentScanJob || currentScanJob.status !== 'running') {
+    return getCurrentScanJob();
+  }
+
+  if (currentScanChild) {
+    try {
+      currentScanChild.kill('SIGTERM');
+    } catch {
+      // best effort termination
+    }
+  }
+
+  currentScanJob = {
+    ...currentScanJob,
+    status: 'stopped',
+    completedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    error: 'Scanner stopped by admin.',
+  };
+  void updateRuntimeJob(currentScanJob);
+  currentScanChild = null;
+  return serializeJob(currentScanJob);
 }
 
 function getCurrentScanJob() {
@@ -1046,4 +1177,5 @@ module.exports = {
   getScannerHealth,
   scanSelectedRoots,
   startScanJob,
+  stopScanJob,
 };

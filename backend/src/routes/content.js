@@ -3,6 +3,12 @@ const router = express.Router();
 const { listItems, searchItems } = require('../data/store');
 const HOMEPAGE_LIMIT = 30;
 
+function asyncRoute(handler) {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
 function getItemRecencyTimestamp(item) {
   const candidates = [
     item?.publishedAt,
@@ -38,7 +44,10 @@ function sortByLatest(items) {
   });
 }
 
-// Removed getPublishedItems() - use listItems({status:'published', offset, limit}) directly
+async function getPublishedItems(filters = {}, offset = 0, limit = null, sort = 'latest') {
+  const { items } = await listItems({ ...filters, status: 'published' }, offset, limit, sort);
+  return items;
+}
 
 
 function normalizeQueryValue(value) {
@@ -65,18 +74,15 @@ function normalizePositiveInt(value, defaultValue, { min = 1, max = Number.MAX_S
 }
 
 async function buildHomepagePayload(limit = HOMEPAGE_LIMIT) {
-  const publishedItems = await getPublishedItems();
-  const featured = publishedItems.find((item) => item.featured) || publishedItems[0] || null;
-  const latest = sortByLatest(publishedItems).slice(0, limit);
-  const popular = [...publishedItems]
-    .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-    .slice(0, limit);
-  const trending = [...publishedItems]
-    .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
-    .slice(0, limit);
-  const series = publishedItems
-    .filter((item) => item.type === 'series')
-    .slice(0, limit);
+  const [featuredItems, latest, popular, trending, series] = await Promise.all([
+    getPublishedItems({ featured: true }, 0, 1),
+    getPublishedItems({}, 0, limit, 'latest'),
+    getPublishedItems({}, 0, limit, 'popular'),
+    getPublishedItems({}, 0, limit, 'trending'),
+    getPublishedItems({ type: 'series' }, 0, limit, 'latest')
+  ]);
+
+  const featured = featuredItems[0] || latest[0] || null;
 
   return {
     featured,
@@ -88,59 +94,55 @@ async function buildHomepagePayload(limit = HOMEPAGE_LIMIT) {
   };
 }
 
-router.get('/featured', async (req, res) => {
-  const items = await getPublishedItems();
-  const featured = items.find((item) => item.featured) || items[0] || null;
+router.get('/featured', asyncRoute(async (req, res) => {
+  const items = await getPublishedItems({ featured: true }, 0, 1);
+  const featured = items[0] || (await getPublishedItems({}, 0, 1))[0] || null;
   res.json(featured);
-});
+}));
 
-router.get('/', async (req, res) => {
-  const items = await getPublishedItems();
-  const featured = items.find((item) => item.featured) || items[0] || null;
+router.get('/', asyncRoute(async (req, res) => {
   const page = normalizePositiveInt(req.query.page, 1, { min: 1, max: 100000 });
   const limit = normalizePositiveInt(req.query.limit, 24, { min: 1, max: 100 });
-  const includeAll = req.query.all === '1';
-  const pagedItems = includeAll ? items : items.slice((page - 1) * limit, (page - 1) * limit + limit);
+  const sort = normalizeQueryValue(req.query.sort) || 'latest';
+  
+  const { items, total } = await listItems({ status: 'published' }, (page - 1) * limit, limit, sort);
+  const featured = items.find(i => i.featured) || items[0] || null;
 
   res.json({
-    items: pagedItems,
+    items,
     featured,
-    total: items.length,
-    page: includeAll ? 1 : page,
-    limit: includeAll ? items.length : limit,
-    hasMore: includeAll ? false : page * limit < items.length,
+    total,
+    page,
+    limit,
+    hasMore: page * limit < total,
   });
-});
+}));
 
-router.get('/latest', async (req, res) => {
+router.get('/latest', asyncRoute(async (req, res) => {
   const limit = normalizePositiveInt(req.query.limit, 10, { min: 1, max: 100 });
-  const items = (await getPublishedItems()).slice(0, limit);
+  const items = await getPublishedItems({}, 0, limit, 'latest');
   res.json({ items });
-});
+}));
 
-router.get('/popular', async (req, res) => {
+router.get('/popular', asyncRoute(async (req, res) => {
   const limit = normalizePositiveInt(req.query.limit, 10, { min: 1, max: 100 });
-  const items = [...await getPublishedItems()]
-    .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-    .slice(0, limit);
+  const items = await getPublishedItems({}, 0, limit, 'popular');
   res.json({ items });
-});
+}));
 
-router.get('/trending', async (req, res) => {
+router.get('/trending', asyncRoute(async (req, res) => {
   const limit = normalizePositiveInt(req.query.limit, 10, { min: 1, max: 100 });
-  const items = [...await getPublishedItems()]
-    .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
-    .slice(0, limit);
+  const items = await getPublishedItems({}, 0, limit, 'trending');
   res.json({ items });
-});
+}));
 
-router.get('/homepage', async (req, res) => {
+router.get('/homepage', asyncRoute(async (req, res) => {
   const limit = normalizePositiveInt(req.query.limit, HOMEPAGE_LIMIT, { min: 1, max: 100 });
   res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=120');
   res.json(await buildHomepagePayload(limit));
-});
+}));
 
-router.get('/browse', async (req, res) => {
+router.get('/browse', asyncRoute(async (req, res) => {
   const type = normalizeQueryValue(req.query.type);
   const genre = normalizeQueryValue(req.query.genre);
   const language = normalizeQueryValue(req.query.language);
@@ -151,7 +153,8 @@ router.get('/browse', async (req, res) => {
   const sort = normalizeQueryValue(req.query.sort) || 'latest';
   const page = normalizePositiveInt(req.query.page, 1, { min: 1, max: 100000 });
   const limit = normalizePositiveInt(req.query.limit, 20, { min: 1, max: 100 });
-const baseFilters = { status: 'published' };
+  
+  const baseFilters = { status: 'published' };
   if (type) baseFilters.type = type;
   if (genre) baseFilters.genre = genre;
   if (language) baseFilters.language = language;
@@ -159,40 +162,23 @@ const baseFilters = { status: 'published' };
   if (tag) baseFilters.tag = tag;
   if (year) baseFilters.year = year;
 
+  const offset = (page - 1) * limit;
   let { items, total } = q
     ? await searchItems(q, baseFilters)
-    : await listItems(baseFilters, (page - 1) * limit, limit);
-
-  // Server-side filtering/pagination now handles type/genre/etc
+    : await listItems(baseFilters, offset, limit, sort);
 
   if (q) {
-    if (sort === 'trending') {
-      items = [...items].sort((a, b) => (b.searchScore || 0) - (a.searchScore || 0) || (b.trendingScore || 0) - (a.trendingScore || 0));
-    } else if (sort === 'popular' || sort === 'rating') {
-      items = [...items].sort((a, b) => (b.searchScore || 0) - (a.searchScore || 0) || (Number(b.rating) || 0) - (Number(a.rating) || 0));
-    } else if (sort === 'featured') {
-      items = [...items].sort((a, b) => (b.searchScore || 0) - (a.searchScore || 0) || (Number(b.featuredOrder) || 0) - (Number(a.featuredOrder) || 0));
-    } else {
-      items = [...items].sort((a, b) => (b.searchScore || 0) - (a.searchScore || 0) || getItemRecencyTimestamp(b) - getItemRecencyTimestamp(a));
-    }
-  } else if (sort === 'featured') {
-    items = [...items].sort((a, b) => (Number(b.featuredOrder) || 0) - (Number(a.featuredOrder) || 0) || (b.featured ? 1 : 0) - (a.featured ? 1 : 0));
-  } else if (sort === 'trending') {
-    items = [...items].sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0));
-  } else if (sort === 'popular' || sort === 'rating') {
-    items = [...items].sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0));
-  } else if (sort === 'latest') {
-    items = sortByLatest(items);
+    total = items.length;
+    items = items.slice(offset, offset + limit);
   }
 
-  const offset = (page - 1) * limit;
   res.json({
     items,
-    total: total || items.length,
+    total,
     page,
     limit,
     query: q,
   });
-});
+}));
 
 module.exports = router;

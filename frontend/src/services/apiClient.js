@@ -1,5 +1,53 @@
 const API_BASE = (import.meta.env.VITE_API_URL || '/portal-api').replace(/\/$/, '');
 
+class ApiError extends Error {
+  constructor(message, { status = 500, code = 'REQUEST_FAILED', details = null, requestId = '' } = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+    this.requestId = requestId;
+  }
+}
+
+function parseApiErrorPayload(rawText, status) {
+  if (!rawText) {
+    return {
+      message: `Request failed (${status})`,
+      code: 'REQUEST_FAILED',
+      details: null,
+      requestId: '',
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(rawText);
+    if (parsed?.error && typeof parsed.error === 'object') {
+      return {
+        message: parsed.error.message || `Request failed (${status})`,
+        code: parsed.error.code || 'REQUEST_FAILED',
+        details: parsed.error.details || null,
+        requestId: parsed.requestId || '',
+      };
+    }
+
+    return {
+      message: parsed?.error || parsed?.message || `Request failed (${status})`,
+      code: 'REQUEST_FAILED',
+      details: null,
+      requestId: '',
+    };
+  } catch {
+    return {
+      message: rawText || `Request failed (${status})`,
+      code: 'REQUEST_FAILED',
+      details: null,
+      requestId: '',
+    };
+  }
+}
+
 function clearStoredSession() {
   if (typeof localStorage === 'undefined') {
     return;
@@ -45,14 +93,20 @@ async function apiClient(endpoint, options = {}) {
   const response = await fetch(endpointUrl.toString(), config);
   
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    const errorText = await response.text().catch(() => '');
+    const parsed = parseApiErrorPayload(errorText, response.status);
     if (response.status === 401) {
       clearStoredSession();
       if (!String(endpoint || '').startsWith('/auth/')) {
         redirectToLogin();
       }
     }
-    throw new Error(error.error || 'Request failed');
+    throw new ApiError(parsed.message, {
+      status: response.status,
+      code: parsed.code,
+      details: parsed.details,
+      requestId: parsed.requestId,
+    });
   }
 
   if (response.status === 204) {
@@ -141,3 +195,4 @@ function getAuthHeader() {
 }
 
 export default apiClient;
+export { ApiError };

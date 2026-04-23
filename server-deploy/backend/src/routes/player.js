@@ -8,6 +8,8 @@ const { loadScannerRoots } = require('../data/store');
 const router = express.Router();
 const DEFAULT_PLAYER_CACHE_ROOT = '/var/www/html/Extra_Storage/portal-media-cache';
 const OPTIMIZED_CACHE_ROOT = process.env.PLAYER_CACHE_ROOT || DEFAULT_PLAYER_CACHE_ROOT;
+const FFMPEG_BIN = process.env.FFMPEG_PATH || 'ffmpeg';
+const FFPROBE_BIN = process.env.FFPROBE_PATH || 'ffprobe';
 const activeCacheJobs = new Map();
 const UNIVERSAL_TARGET = 'mp4-h264-aac-faststart';
 
@@ -299,7 +301,7 @@ function transcodeToMp4(resolvedPath, res) {
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Transfer-Encoding', 'chunked');
 
-  const ffmpeg = spawn('/usr/bin/ffmpeg', [
+  const ffmpeg = spawn(FFMPEG_BIN, [
     '-v', 'error',
     '-fflags', '+discardcorrupt+genpts',
     '-err_detect', 'ignore_err',
@@ -352,7 +354,7 @@ function buildCacheOutputPath(selection) {
 
 function probeMedia(resolvedPath) {
   return new Promise((resolve, reject) => {
-    const ffprobe = spawn('/usr/bin/ffprobe', [
+    const ffprobe = spawn(FFPROBE_BIN, [
       '-v', 'error',
       '-show_streams',
       '-show_format',
@@ -577,7 +579,7 @@ function ensureOptimizedCache(selection, resolvedPath, strategy) {
   ensureDirectory(path.dirname(cachePath));
   const tempPath = `${cachePath}.part.mp4`;
   const jobPromise = new Promise((resolve, reject) => {
-    const ffmpeg = spawn('/usr/bin/ffmpeg', getFfmpegFileArgs(resolvedPath, tempPath, strategy.mode), {
+    const ffmpeg = spawn(FFMPEG_BIN, getFfmpegFileArgs(resolvedPath, tempPath, strategy.mode), {
       stdio: ['ignore', 'ignore', 'pipe'],
     });
 
@@ -614,7 +616,7 @@ function streamFfmpegMp4(resolvedPath, res, ffmpegArgs) {
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Transfer-Encoding', 'chunked');
 
-  const ffmpeg = spawn('/usr/bin/ffmpeg', ffmpegArgs, {
+  const ffmpeg = spawn(FFMPEG_BIN, ffmpegArgs, {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 

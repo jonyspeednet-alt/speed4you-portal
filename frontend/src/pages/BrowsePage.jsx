@@ -1,8 +1,9 @@
-import { useDeferredValue, useEffect, useMemo, useState, useCallback } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { contentService, searchService } from '../services';
 import { useBreakpoint } from '../hooks';
+import { CardSkeleton } from '../components/feedback/Skeleton';
 
 const QUICK_GENRES = ['All', 'Action', 'Drama', 'Comedy', 'Horror', 'Romance', 'Thriller', 'Crime'];
 const QUICK_LANGUAGES = ['All', 'English', 'Bengali', 'Hindi', 'Korean', 'Japanese'];
@@ -41,20 +42,9 @@ function BrowsePage({ type }) {
   const [selectedCollection, setSelectedCollection] = useState(() => normalizeQuery(searchParams.get('collection')));
   const [searchText, setSearchText] = useState(() => searchParams.get('q') || '');
   const [page, setPage] = useState(() => Number(searchParams.get('page') || 1));
-  const [content, setContent] = useState([]);
-  const [suggestions, setSuggestions] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState('');
+// Removed duplicate content state - useInfiniteQuery handles
+  const [suggestions, setSuggestions] = useState([]);  
   const deferredSearchText = useDeferredValue(searchText);
-
-  useEffect(() => {
-    const nextQuery = searchParams.get('q') || '';
-    if (nextQuery !== searchText) {
-      setSearchText(nextQuery);
-    }
-  }, [searchParams, searchText]);
 
   useEffect(() => {
     const nextParams = {};
@@ -68,10 +58,6 @@ function BrowsePage({ type }) {
 
     setSearchParams(nextParams, { replace: true });
   }, [deferredSearchText, page, selectedCollection, selectedGenre, selectedLanguage, setSearchParams, sortBy]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [deferredSearchText, selectedGenre, selectedLanguage, selectedCollection, sortBy, type]);
 
   const params = useMemo(() => ({
     type,
@@ -89,7 +75,9 @@ function BrowsePage({ type }) {
     hasNextPage,
     isFetching,
     isFetchingNextPage,
+    isLoading,
     error,
+    refetch,
   } = useInfiniteQuery({
     queryKey: ['browse', params],
     queryFn: ({ pageParam = 1 }) => contentService.browse({ ...params, page: pageParam }),
@@ -98,7 +86,8 @@ function BrowsePage({ type }) {
       const nextPage = allPages.length + 1;
       return lastPage.total >= nextPage * PAGE_SIZE ? nextPage : undefined;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000, // Reduced staleTime for more "instant" updates but not too frequent
+    gcTime: 10 * 60 * 1000,
   });
 
   const content = useMemo(() => {
@@ -199,7 +188,10 @@ function BrowsePage({ type }) {
               name="browse_search"
               autoComplete="off"
               value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
+              onChange={(event) => {
+                setSearchText(event.target.value);
+                setPage(1);
+              }}
               placeholder="Search title, genre, year, language..."
               style={styles.heroSearchInput}
             />
@@ -242,19 +234,19 @@ function BrowsePage({ type }) {
           <div style={{ ...styles.insightRow, ...(isMobile ? styles.insightRowMobile : isTablet ? styles.insightRowTablet : {}) }}>
             <div style={styles.insightCard}>
               <span style={styles.insightLabel}>Visible Now</span>
-              <strong style={styles.insightValue}>{loading ? '...' : filteredContent.length}</strong>
+              <strong style={styles.insightValue}>{isLoading ? '...' : filteredContent.length}</strong>
             </div>
             <div style={styles.insightCard}>
               <span style={styles.insightLabel}>Top Rated</span>
-              <strong style={styles.insightValue}>{loading ? '...' : highRatedCount}</strong>
+              <strong style={styles.insightValue}>{isLoading ? '...' : highRatedCount}</strong>
             </div>
             <div style={styles.insightCard}>
               <span style={styles.insightLabel}>Latest Year</span>
-              <strong style={styles.insightValue}>{loading ? '...' : newestYear || 'N/A'}</strong>
+              <strong style={styles.insightValue}>{isLoading ? '...' : newestYear || 'N/A'}</strong>
             </div>
             <div style={styles.insightCard}>
               <span style={styles.insightLabel}>Needs Review</span>
-              <strong style={styles.insightValue}>{loading ? '...' : reviewNeededCount}</strong>
+              <strong style={styles.insightValue}>{isLoading ? '...' : reviewNeededCount}</strong>
             </div>
           </div>
         </div>
@@ -263,21 +255,42 @@ function BrowsePage({ type }) {
           <div style={styles.filterGrid}>
             <label style={styles.filterField}>
               <span style={styles.filterLabel}>Genre</span>
-              <select value={selectedGenre} onChange={(event) => setSelectedGenre(event.target.value)} style={styles.select}>
+              <select
+                value={selectedGenre}
+                onChange={(event) => {
+                  setSelectedGenre(event.target.value);
+                  setPage(1);
+                }}
+                style={styles.select}
+              >
                 {genreOptions.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
               </select>
             </label>
 
             <label style={styles.filterField}>
               <span style={styles.filterLabel}>Language</span>
-              <select value={selectedLanguage} onChange={(event) => setSelectedLanguage(event.target.value)} style={styles.select}>
+              <select
+                value={selectedLanguage}
+                onChange={(event) => {
+                  setSelectedLanguage(event.target.value);
+                  setPage(1);
+                }}
+                style={styles.select}
+              >
                 {languageOptions.map((language) => <option key={language} value={language}>{language}</option>)}
               </select>
             </label>
 
             <label style={styles.filterField}>
               <span style={styles.filterLabel}>Sort</span>
-              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} style={styles.select}>
+              <select
+                value={sortBy}
+                onChange={(event) => {
+                  setSortBy(event.target.value);
+                  setPage(1);
+                }}
+                style={styles.select}
+              >
                 <option value="latest">Latest</option>
                 <option value="popular">Popular</option>
                 <option value="trending">Trending</option>
@@ -288,7 +301,14 @@ function BrowsePage({ type }) {
 
             <label style={styles.filterField}>
               <span style={styles.filterLabel}>Collection</span>
-              <select value={selectedCollection} onChange={(event) => setSelectedCollection(event.target.value)} style={styles.select}>
+              <select
+                value={selectedCollection}
+                onChange={(event) => {
+                  setSelectedCollection(event.target.value);
+                  setPage(1);
+                }}
+                style={styles.select}
+              >
                 {collectionOptions.map((collection) => <option key={collection} value={collection}>{collection}</option>)}
               </select>
             </label>
@@ -310,7 +330,10 @@ function BrowsePage({ type }) {
           <button
             key={genre}
             type="button"
-            onClick={() => setSelectedGenre(genre)}
+            onClick={() => {
+              setSelectedGenre(genre);
+              setPage(1);
+            }}
             style={{
               ...styles.chip,
               ...(selectedGenre === genre ? styles.chipActive : {}),
@@ -324,21 +347,31 @@ function BrowsePage({ type }) {
       <div style={styles.summaryBar}>
         <span style={styles.summaryLabel}>Browse Results</span>
         <strong style={styles.summaryValue}>
-          {loading ? 'Refreshing...' : hasActiveQuery ? `${total} ranked matches for "${deferredSearchText.trim()}"` : `${filteredContent.length} of ${total} titles visible`}
+          {isFetching && !isFetchingNextPage ? 'Refreshing...' : hasActiveQuery ? `${total} ranked matches for "${deferredSearchText.trim()}"` : `${filteredContent.length} of ${total} titles visible`}
         </strong>
       </div>
 
-      {loading ? (
-        <div style={styles.empty}>
-          <p>Loading premium picks...</p>
+      {isLoading ? (
+        <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : {}) }}>
+          {Array.from({ length: 12 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
         </div>
       ) : error ? (
-        <div style={styles.empty}>
-          <p>{error}</p>
+        <div style={styles.emptyState}>
+          <h2 style={styles.emptyTitle}>Error loading content</h2>
+          <p style={styles.emptyText}>{error.message || 'An unexpected error occurred.'}</p>
+          <button
+            type="button"
+            onClick={() => refetch({ cancelRefetch: false })}
+            style={styles.resetButton}
+          >
+            Retry
+          </button>
         </div>
       ) : (
         <>
-      <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : {}) }}>
+          <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : {}) }}>
             {filteredContent.map((item, index) => (
               <Link
                 key={item.id}
@@ -373,18 +406,18 @@ function BrowsePage({ type }) {
             <div style={styles.loadMoreWrap}>
               <button
                 type="button"
-                onClick={() => setPage((current) => current + 1)}
+                onClick={() => fetchNextPage()}
                 style={styles.loadMoreButton}
-                disabled={loadingMore}
+                disabled={isFetchingNextPage}
               >
-                {loadingMore ? 'Loading More...' : 'Load More Titles'}
+                {isFetchingNextPage ? 'Loading More...' : 'Load More Titles'}
               </button>
             </div>
           )}
         </>
       )}
 
-      {!loading && !error && filteredContent.length === 0 && (
+      {!isLoading && !error && filteredContent.length === 0 && (
         <div style={styles.emptyState}>
           <h2 style={styles.emptyTitle}>No content matched this selection.</h2>
           <p style={styles.emptyText}>Try clearing the filters or searching with a broader title, language, or genre.</p>

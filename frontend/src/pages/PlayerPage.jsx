@@ -7,7 +7,15 @@ const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2];
 const CONTROLS_HIDE_DELAY = 3200;
 const RESUME_SAVE_INTERVAL = 5;
 const PLAYER_API_BASE = (import.meta.env.VITE_API_URL || '/portal-api').replace(/\/$/, '');
-const AUDIO_BOOST_LEVELS = [1, 1.6, 2.2];
+const AUDIO_BOOST_LEVELS = [1, 1.3, 1.6, 2];
+
+function Icon({ children, size = 18 }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
 
 function withPlayerApiBase(pathname) {
   if (!pathname) {
@@ -97,6 +105,9 @@ function PlayerPage() {
   const mediaSourceNodeRef = useRef(null);
   const gainNodeRef = useRef(null);
   const compressorNodeRef = useRef(null);
+  const lastTapRef = useRef({ time: 0, x: 0 });
+  const holdSpeedTimerRef = useRef(null);
+  const holdSpeedPrevRateRef = useRef(1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -111,6 +122,7 @@ function PlayerPage() {
   const [streamUrl, setStreamUrl] = useState('');
   const [streamStatus, setStreamStatus] = useState('');
   const [streamMode, setStreamMode] = useState('direct');
+  const [qualityLabel, setQualityLabel] = useState('Auto');
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isPictureInPicture, setIsPictureInPicture] = useState(false);
   const [mediaDuration, setMediaDuration] = useState(0);
@@ -135,6 +147,23 @@ function PlayerPage() {
     const bufferedEnd = video.buffered.end(video.buffered.length - 1);
     return clamp((bufferedEnd / activeDuration) * 100, 0, 100);
   })();
+  const bufferedAheadSeconds = (() => {
+    const video = videoRef.current;
+    if (!video || !video.buffered?.length) {
+      return 0;
+    }
+
+    const current = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    for (let i = 0; i < video.buffered.length; i += 1) {
+      const start = video.buffered.start(i);
+      const end = video.buffered.end(i);
+      if (current >= start && current <= end) {
+        return Math.max(0, end - current);
+      }
+    }
+    return 0;
+  })();
+  const bufferHealth = bufferedAheadSeconds >= 40 ? 'Excellent' : bufferedAheadSeconds >= 18 ? 'Good' : bufferedAheadSeconds >= 8 ? 'Fair' : 'Low';
 
   useEffect(() => {
     let cancelled = false;
@@ -165,6 +194,7 @@ function PlayerPage() {
         setScrubTime(0);
         setStreamStatus('');
         setStreamMode('direct');
+        setQualityLabel('Auto');
         lastSavedPositionRef.current = 0;
         pendingResumeTimeRef.current = null;
         pendingAutoplayRef.current = false;
@@ -198,9 +228,10 @@ function PlayerPage() {
           const targetStreamUrl = withPlayerApiBase(primarySource.url || '');
           setStreamUrl(targetStreamUrl);
           setStreamMode(primarySource.delivery || 'direct');
+          setQualityLabel(String(primarySource.qualityLabel || primarySource.quality || primarySource.resolution || 'Auto'));
 
           if (primarySource.delivery && primarySource.delivery !== 'direct' && !primarySource.optimizedReady) {
-            setStreamStatus(`Preparing smooth playback (${primarySource.delivery}) in the background...`);
+            setStreamStatus('Optimizing stream...');
 
             (async () => {
               let ready = false;
@@ -222,12 +253,12 @@ function PlayerPage() {
                 if (ready) {
                   upgradeToOptimizedStream(primarySource.url || '');
                 } else {
-                  setStreamStatus('Playing fallback stream while optimized playback continues to prepare.');
+                  setStreamStatus('Using fallback stream.');
                 }
               }
             })().catch(() => {
               if (!cancelled) {
-                setStreamStatus('Playing fallback stream.');
+                setStreamStatus('Using fallback stream.');
               }
             });
           } else {
@@ -350,18 +381,18 @@ function PlayerPage() {
     function scheduleHide() {
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = setTimeout(() => {
-        if (!isScrubbing) {
+        if (!isScrubbing && isPlaying) {
           setShowControls(false);
         }
       }, CONTROLS_HIDE_DELAY);
     }
 
-    if (showControls) {
+    if (showControls && isPlaying) {
       scheduleHide();
     }
 
     return () => clearTimeout(hideTimerRef.current);
-  }, [isScrubbing, showControls]);
+  }, [isPlaying, isScrubbing, showControls]);
 
   const persistProgress = useCallback(async (position, duration) => {
     if (!content?.type || !contentId || !Number.isFinite(position) || position <= 0) {
@@ -466,6 +497,26 @@ function PlayerPage() {
     setShowControls(true);
   };
 
+  const startHoldSpeedBoost = () => {
+    if (holdSpeedTimerRef.current) {
+      clearTimeout(holdSpeedTimerRef.current);
+    }
+    holdSpeedPrevRateRef.current = playbackRate;
+    holdSpeedTimerRef.current = setTimeout(() => {
+      setPlaybackRate(2);
+    }, 220);
+  };
+
+  const endHoldSpeedBoost = () => {
+    if (holdSpeedTimerRef.current) {
+      clearTimeout(holdSpeedTimerRef.current);
+      holdSpeedTimerRef.current = null;
+    }
+    if (playbackRate === 2 && holdSpeedPrevRateRef.current !== 2) {
+      setPlaybackRate(holdSpeedPrevRateRef.current);
+    }
+  };
+
   const handleVolumeChange = (event) => {
     const nextVolume = Number(event.target.value);
     setVolume(nextVolume);
@@ -552,6 +603,39 @@ function PlayerPage() {
 
     await videoRef.current.requestPictureInPicture();
     setIsPictureInPicture(true);
+  };
+
+  const handleSurfaceTouchEnd = (event) => {
+    if (!videoRef.current) {
+      return;
+    }
+
+    const touch = event.changedTouches?.[0];
+    if (!touch) {
+      return;
+    }
+
+    const now = Date.now();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const timeGap = now - lastTapRef.current.time;
+    const xGap = Math.abs(x - lastTapRef.current.x);
+
+    if (timeGap < 280 && xGap < 72) {
+      const isLeftZone = x < rect.width * 0.35;
+      const isRightZone = x > rect.width * 0.65;
+      if (isLeftZone) {
+        skipBy(-10);
+      } else if (isRightZone) {
+        skipBy(10);
+      } else {
+        togglePlayback();
+      }
+      lastTapRef.current = { time: 0, x: 0 };
+      return;
+    }
+
+    lastTapRef.current = { time: now, x };
   };
 
   if (loading) {
@@ -652,25 +736,40 @@ function PlayerPage() {
         }}
       />
 
+      <div
+        style={styles.gestureSurface}
+        onDoubleClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = event.clientX - rect.left;
+          if (x < rect.width * 0.35) {
+            skipBy(-10);
+          } else if (x > rect.width * 0.65) {
+            skipBy(10);
+          } else {
+            togglePlayback();
+          }
+        }}
+        onTouchEnd={handleSurfaceTouchEnd}
+      />
+
       <div style={styles.chrome} />
       <div style={styles.vignette} />
 
       {!isMobile && (
         <Link to="/" style={{ ...styles.back, opacity: showControls ? 1 : 0 }}>
-          Exit Player
+          Back
         </Link>
       )}
 
       <div style={{ ...styles.topInfo, ...(isMobile ? styles.topInfoMobile : {}), opacity: showControls ? 1 : 0 }}>
-        <span style={styles.eyebrow}>Now Screening</span>
         <h1 style={styles.title}>{content.title}</h1>
         <p style={styles.episode}>
           {content.type === 'series'
-            ? `Season ${content.season} | Episode ${content.episode}${content.episodeTitle ? ` | ${content.episodeTitle}` : ''}`
-            : (content.episodeTitle || 'Feature presentation')}
+            ? `S${content.season} E${content.episode}${content.episodeTitle ? ` - ${content.episodeTitle}` : ''}`
+            : (content.episodeTitle || 'Movie')}
         </p>
         {streamStatus ? <p style={styles.streamStatus}>{streamStatus}</p> : null}
-        {streamMode === 'optimized' ? <p style={styles.streamHint}>Smooth playback cache active.</p> : null}
+        {streamMode === 'optimized' ? <p style={styles.streamHint}>Optimized</p> : null}
       </div>
 
       <div
@@ -711,18 +810,32 @@ function PlayerPage() {
             </div>
 
             <div style={styles.mobileCenterControls}>
-              <button style={styles.mobileGhostControl} onClick={() => skipBy(-10)}>10</button>
-              <button style={styles.mobilePlayControl} onClick={togglePlayback}>
-                {isPlaying ? 'Pause' : 'Play'}
+              <button style={styles.mobileGhostControl} onClick={() => skipBy(-10)}>
+                <Icon size={16}><path d="M11 19L2 12l9-7v14z" /><path d="M22 19l-9-7 9-7v14z" /></Icon>
               </button>
-              <button style={styles.mobileGhostControl} onClick={() => skipBy(10)}>10</button>
+              <button
+                style={styles.mobilePlayControl}
+                onClick={togglePlayback}
+                onMouseDown={startHoldSpeedBoost}
+                onMouseUp={endHoldSpeedBoost}
+                onMouseLeave={endHoldSpeedBoost}
+                onTouchStart={startHoldSpeedBoost}
+                onTouchEnd={endHoldSpeedBoost}
+              >
+                {isPlaying ? <Icon size={18}><line x1="10" y1="6" x2="10" y2="18" /><line x1="14" y1="6" x2="14" y2="18" /></Icon> : <Icon size={18}><polygon points="8 5 19 12 8 19 8 5" /></Icon>}
+              </button>
+              <button style={styles.mobileGhostControl} onClick={() => skipBy(10)}>
+                <Icon size={16}><path d="M13 19l9-7-9-7v14z" /><path d="M2 19l9-7-9-7v14z" /></Icon>
+              </button>
             </div>
 
             <div style={styles.mobileMetaRow}>
               <div style={styles.metaBadge}>{content.type === 'series' ? `S${content.season} E${content.episode}` : 'MOVIE'}</div>
               <div style={styles.metaBadge}>{playbackRate}x</div>
-              <button style={styles.mobileIconBtn} onClick={() => setIsMuted((current) => !current)}>{isMuted ? 'Muted' : 'Sound'}</button>
-              <button style={styles.mobileIconBtn} onClick={toggleFullscreen}>{isFullscreen ? 'Window' : 'Full'}</button>
+              <div style={styles.metaBadge}>{qualityLabel}</div>
+              <div style={styles.metaBadge}>{bufferHealth}</div>
+              <button style={styles.mobileIconBtn} onClick={() => setIsMuted((current) => !current)}>{isMuted ? 'Unmute' : 'Mute'}</button>
+              <button style={styles.mobileIconBtn} onClick={toggleFullscreen}>{isFullscreen ? 'Exit Full' : 'Full'}</button>
             </div>
 
             <div style={styles.mobileSecondaryRow}>
@@ -736,7 +849,7 @@ function PlayerPage() {
               </label>
 
               <label style={styles.mobileSelectWrap}>
-                <span style={styles.mobileSelectLabel}>Boost</span>
+                <span style={styles.mobileSelectLabel}>Audio</span>
                 <select value={String(audioBoostLevel)} onChange={(event) => setAudioBoostLevel(Number(event.target.value))} style={styles.mobileSelect}>
                   {AUDIO_BOOST_LEVELS.map((level) => (
                     <option key={level} value={level}>{level.toFixed(1)}x</option>
@@ -746,7 +859,7 @@ function PlayerPage() {
 
               {canUsePictureInPicture ? (
                 <button style={styles.mobileIconBtn} onClick={togglePictureInPicture}>
-                  {isPictureInPicture ? 'Exit PiP' : 'PiP'}
+                  {isPictureInPicture ? 'PiP Off' : 'PiP'}
                 </button>
               ) : null}
             </div>
@@ -762,7 +875,7 @@ function PlayerPage() {
                 style={styles.mobileVolumeSlider}
               />
               <button style={styles.mobileIconBtn} onClick={() => setIsAudioBoostEnabled((current) => !current)}>
-                {isAudioBoostEnabled ? 'Boost On' : 'Boost Off'}
+                {isAudioBoostEnabled ? 'Audio Boost' : 'Boost Off'}
               </button>
             </div>
           </div>
@@ -770,11 +883,23 @@ function PlayerPage() {
           <div style={styles.controlsRow}>
             <div style={styles.primaryCluster}>
               <div style={styles.playbackActions}>
-                <button style={styles.pillControl} onClick={() => skipBy(-10)}>Back 10s</button>
-                <button style={styles.heroControl} onClick={togglePlayback}>
-                  {isPlaying ? 'Pause' : 'Play'}
+                <button style={styles.pillControl} onClick={() => skipBy(-10)} aria-label="Back 10 seconds">
+                  <Icon size={16}><path d="M11 19L2 12l9-7v14z" /><path d="M22 19l-9-7 9-7v14z" /></Icon>
                 </button>
-                <button style={styles.pillControl} onClick={() => skipBy(10)}>Skip 10s</button>
+                <button
+                  style={styles.heroControl}
+                  onClick={togglePlayback}
+                  onMouseDown={startHoldSpeedBoost}
+                  onMouseUp={endHoldSpeedBoost}
+                  onMouseLeave={endHoldSpeedBoost}
+                  onTouchStart={startHoldSpeedBoost}
+                  onTouchEnd={endHoldSpeedBoost}
+                >
+                  {isPlaying ? <Icon size={18}><line x1="10" y1="6" x2="10" y2="18" /><line x1="14" y1="6" x2="14" y2="18" /></Icon> : <Icon size={18}><polygon points="8 5 19 12 8 19 8 5" /></Icon>}
+                </button>
+                <button style={styles.pillControl} onClick={() => skipBy(10)} aria-label="Skip 10 seconds">
+                  <Icon size={16}><path d="M13 19l9-7-9-7v14z" /><path d="M2 19l9-7-9-7v14z" /></Icon>
+                </button>
               </div>
               <div style={styles.timeGroup}>
                 <span style={styles.timeStrong}>{formatTime(activeTime)}</span>
@@ -784,12 +909,14 @@ function PlayerPage() {
                 {content.type === 'series' ? `S${content.season} E${content.episode}` : 'MOVIE'}
               </div>
               <div style={styles.metaBadge}>{playbackRate}x</div>
+              <div style={styles.metaBadge}>{qualityLabel}</div>
+              <div style={styles.metaBadge}>{bufferHealth}</div>
             </div>
 
             <div style={styles.controlGroup}>
               <div style={styles.volumeControl}>
                 <button style={styles.secondaryControl} onClick={() => setIsMuted((current) => !current)}>
-                  {isMuted ? 'Unmute' : 'Volume'}
+                  {isMuted ? 'Unmute' : 'Mute'}
                 </button>
                 <input
                   type="range"
@@ -802,29 +929,29 @@ function PlayerPage() {
               </div>
 
               <button style={styles.secondaryControl} onClick={() => setIsAudioBoostEnabled((current) => !current)}>
-                {isAudioBoostEnabled ? `Boost ${audioBoostLevel.toFixed(1)}x` : 'Boost Off'}
+                {isAudioBoostEnabled ? 'Audio Boost' : 'Boost Off'}
               </button>
 
               <select value={String(audioBoostLevel)} onChange={(event) => setAudioBoostLevel(Number(event.target.value))} style={styles.select}>
                 {AUDIO_BOOST_LEVELS.map((level) => (
-                  <option key={level} value={level}>{level.toFixed(1)}x audio</option>
+                  <option key={level} value={level}>Audio {level.toFixed(1)}x</option>
                 ))}
               </select>
 
               <select value={String(playbackRate)} onChange={(event) => setPlaybackRate(Number(event.target.value))} style={styles.select}>
                 {PLAYBACK_RATES.map((rate) => (
-                  <option key={rate} value={rate}>{rate}x speed</option>
+                  <option key={rate} value={rate}>Speed {rate}x</option>
                 ))}
               </select>
 
               {canUsePictureInPicture ? (
                 <button style={styles.secondaryControl} onClick={togglePictureInPicture}>
-                  {isPictureInPicture ? 'Exit PiP' : 'PiP'}
+                  {isPictureInPicture ? 'PiP Off' : 'PiP'}
                 </button>
               ) : null}
 
               <button style={styles.secondaryControl} onClick={toggleFullscreen}>
-                {isFullscreen ? 'Windowed' : 'Fullscreen'}
+                {isFullscreen ? 'Exit Full' : 'Full'}
               </button>
             </div>
           </div>
@@ -847,50 +974,50 @@ const styles = {
   backToPortal: { display: 'inline-flex', marginTop: '20px', padding: '12px 18px', borderRadius: '999px', background: 'linear-gradient(135deg, var(--accent-red), #ff8a54)', color: '#fff', fontWeight: '700' },
   page: { position: 'fixed', inset: 0, background: '#000', zIndex: 2000 },
   video: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#000' },
+  gestureSurface: { position: 'absolute', inset: 0, zIndex: 4, background: 'transparent' },
   chrome: { position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(4,8,14,0.78) 0%, rgba(4,8,14,0.08) 24%, rgba(4,8,14,0) 52%, rgba(4,8,14,0.88) 100%)' },
   vignette: { position: 'absolute', inset: 0, background: 'radial-gradient(circle at center, rgba(0,0,0,0) 48%, rgba(0,0,0,0.46) 100%)' },
-  back: { position: 'absolute', top: '24px', left: '24px', zIndex: 10, color: '#fff', padding: '12px 18px', borderRadius: '999px', background: 'rgba(7,17,31,0.56)', border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(10px)', fontWeight: '700', transition: 'opacity 180ms ease' },
+  back: { position: 'absolute', top: '24px', left: '24px', zIndex: 10, color: '#fff', padding: '10px 14px', borderRadius: '10px', background: 'rgba(10,14,20,0.82)', border: '1px solid rgba(255,255,255,0.14)', backdropFilter: 'blur(10px)', fontWeight: '700', transition: 'opacity 180ms ease' },
   backMobile: { top: '12px', left: '12px', padding: '10px 14px' },
-  topInfo: { position: 'absolute', top: '24px', right: '24px', zIndex: 10, maxWidth: '420px', padding: '18px 20px', borderRadius: '24px', background: 'rgba(7,17,31,0.42)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(12px)', transition: 'opacity 180ms ease' },
-  topInfoMobile: { top: '16px', left: '12px', right: '12px', maxWidth: 'none', padding: '12px 14px', borderRadius: '18px' },
-  eyebrow: { display: 'inline-block', marginBottom: '10px', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.14em', fontSize: '0.7rem', fontWeight: '700' },
-  title: { color: '#fff', fontSize: 'clamp(1.8rem, 3vw, 2.5rem)', marginBottom: '6px' },
-  episode: { color: 'rgba(255,255,255,0.78)', lineHeight: 1.6 },
-  streamStatus: { marginTop: '10px', color: 'var(--accent-amber)', lineHeight: 1.5, fontWeight: '700' },
-  streamHint: { marginTop: '8px', color: 'var(--accent-cyan)', lineHeight: 1.4, fontWeight: '700' },
-  heroControl: { padding: '12px 24px', borderRadius: '999px', background: 'linear-gradient(135deg, #ffffff, #d8ecff)', color: '#07111f', fontWeight: '900', boxShadow: '0 12px 24px rgba(0,0,0,0.24)' },
-  pillControl: { padding: '12px 16px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontWeight: '700', backdropFilter: 'blur(12px)' },
-  controls: { position: 'absolute', left: '24px', right: '24px', bottom: '24px', zIndex: 10, padding: '18px 20px', borderRadius: '28px', background: 'rgba(7,17,31,0.62)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(14px)', boxShadow: '0 24px 60px rgba(0,0,0,0.26)' },
-  controlsMobile: { left: '8px', right: '8px', bottom: '8px', padding: '12px', borderRadius: '24px', background: 'rgba(7,17,31,0.82)' },
-  scrubberWrap: { position: 'relative', marginBottom: '18px', height: '20px', display: 'flex', alignItems: 'center' },
-  scrubberTrack: { position: 'absolute', left: 0, right: 0, height: '6px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)', overflow: 'hidden' },
+  topInfo: { position: 'absolute', top: '24px', right: '24px', zIndex: 10, maxWidth: '560px', padding: '12px 14px', borderRadius: '12px', background: 'rgba(10,14,20,0.78)', border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(10px)', transition: 'opacity 180ms ease' },
+  topInfoMobile: { top: '16px', left: '12px', right: '12px', maxWidth: 'none', padding: '10px 12px', borderRadius: '10px' },
+  title: { color: '#fff', fontSize: 'clamp(1.05rem, 2.2vw, 1.35rem)', marginBottom: '4px', lineHeight: 1.25 },
+  episode: { color: 'rgba(255,255,255,0.78)', fontSize: '0.86rem', lineHeight: 1.4 },
+  streamStatus: { marginTop: '6px', color: 'rgba(255,255,255,0.82)', lineHeight: 1.4, fontSize: '0.78rem' },
+  streamHint: { marginTop: '4px', color: 'rgba(119, 222, 255, 0.95)', lineHeight: 1.4, fontWeight: '700', fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.1em' },
+  heroControl: { minWidth: '62px', padding: '10px 12px', borderRadius: '10px', background: '#fff', color: '#0b1220', fontWeight: '900', fontFamily: 'monospace' },
+  pillControl: { minWidth: '58px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)', color: '#fff', fontWeight: '800', fontFamily: 'monospace' },
+  controls: { position: 'absolute', left: '20px', right: '20px', bottom: '18px', zIndex: 10, padding: '12px 14px', borderRadius: '12px', background: 'rgba(10,14,20,0.84)', border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(14px)', boxShadow: '0 16px 44px rgba(0,0,0,0.3)' },
+  controlsMobile: { left: '8px', right: '8px', bottom: '8px', padding: '10px', borderRadius: '10px', background: 'rgba(10,14,20,0.9)' },
+  scrubberWrap: { position: 'relative', marginBottom: '12px', height: '18px', display: 'flex', alignItems: 'center' },
+  scrubberTrack: { position: 'absolute', left: 0, right: 0, height: '4px', borderRadius: '999px', background: 'rgba(255,255,255,0.2)', overflow: 'hidden' },
   bufferedTrack: { position: 'absolute', top: 0, bottom: 0, left: 0, borderRadius: '999px', background: 'rgba(255,255,255,0.24)' },
-  progressTrack: { position: 'absolute', top: 0, bottom: 0, left: 0, borderRadius: '999px', background: 'linear-gradient(90deg, var(--accent-red), #ff9a62)' },
+  progressTrack: { position: 'absolute', top: 0, bottom: 0, left: 0, borderRadius: '999px', background: '#ff3344' },
   scrubber: { position: 'relative', width: '100%', margin: 0, appearance: 'none', background: 'transparent', cursor: 'pointer' },
-  controlsRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap' },
+  controlsRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' },
   primaryCluster: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' },
   playbackActions: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' },
-  controlGroup: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' },
-  timeGroup: { display: 'inline-flex', alignItems: 'baseline', gap: '4px', padding: '10px 14px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)' },
+  controlGroup: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' },
+  timeGroup: { display: 'inline-flex', alignItems: 'baseline', gap: '4px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)' },
   timeStrong: { color: '#fff', fontSize: '1rem', fontFamily: 'monospace', fontWeight: '700' },
   time: { color: 'rgba(255,255,255,0.72)', fontSize: '0.92rem', fontFamily: 'monospace' },
-  metaBadge: { padding: '10px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontSize: '0.76rem', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700' },
+  metaBadge: { padding: '8px 10px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontSize: '0.72rem', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: '700' },
   volumeControl: { display: 'flex', alignItems: 'center', gap: '10px' },
-  secondaryControl: { padding: '12px 16px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontWeight: '700' },
+  secondaryControl: { minHeight: '40px', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontWeight: '700' },
   volumeSlider: { width: '112px', accentColor: 'var(--accent-amber)' },
-  select: { padding: '12px 14px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff' },
+  select: { minHeight: '40px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff' },
   mobilePlayerStack: { display: 'grid', gap: '12px' },
   mobileTopBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' },
-  mobileBackBtn: { padding: '10px 14px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', color: '#fff', fontWeight: '700' },
-  mobileCenterControls: { display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 64px', gap: '10px', alignItems: 'center' },
-  mobilePlayControl: { minHeight: '54px', borderRadius: '999px', background: 'linear-gradient(135deg, #ffffff, #d8ecff)', color: '#07111f', fontWeight: '900', fontSize: '1rem' },
-  mobileGhostControl: { minHeight: '54px', borderRadius: '18px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontWeight: '800' },
+  mobileBackBtn: { padding: '8px 10px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', color: '#fff', fontWeight: '700' },
+  mobileCenterControls: { display: 'grid', gridTemplateColumns: '58px minmax(0, 1fr) 58px', gap: '8px', alignItems: 'center' },
+  mobilePlayControl: { minHeight: '46px', borderRadius: '10px', background: '#fff', color: '#0b1220', fontWeight: '800', fontSize: '0.95rem' },
+  mobileGhostControl: { minHeight: '46px', borderRadius: '10px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontWeight: '800' },
   mobileMetaRow: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
   mobileSecondaryRow: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' },
   mobileSelectWrap: { display: 'grid', gap: '6px' },
   mobileSelectLabel: { color: 'rgba(255,255,255,0.62)', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: '700' },
-  mobileSelect: { minHeight: '44px', padding: '10px 12px', borderRadius: '14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff' },
-  mobileIconBtn: { minHeight: '44px', padding: '10px 12px', borderRadius: '14px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', fontWeight: '700' },
+  mobileSelect: { minHeight: '40px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff' },
+  mobileIconBtn: { minHeight: '40px', padding: '8px 10px', borderRadius: '8px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff', fontWeight: '700' },
   mobileVolumeRow: { display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '10px', alignItems: 'center' },
   mobileVolumeSlider: { width: '100%', accentColor: 'var(--accent-amber)' },
 };

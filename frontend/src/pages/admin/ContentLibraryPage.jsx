@@ -1,5 +1,5 @@
 import { startTransition, useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { adminService } from '../../services';
 import ConfirmDialog from '../../components/overlays/ConfirmDialog';
 import ProgressBar from '../../components/ui/ProgressBar';
@@ -132,6 +132,7 @@ function getScannerProgress(job) {
 function ContentLibraryPage() {
   const { isMobile, isTablet } = useBreakpoint();
   const location = useLocation();
+  const navigate = useNavigate();
   const sectionType = location.pathname === '/admin/movies'
     ? 'movie'
     : location.pathname === '/admin/series'
@@ -156,11 +157,22 @@ function ContentLibraryPage() {
   const [selectedContentIds, setSelectedContentIds] = useState([]);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [bulkUpdateLoading, setBulkUpdateLoading] = useState(false);
+  const [bulkStatusLoading, setBulkStatusLoading] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [savedPresets, setSavedPresets] = useState([]);
+  const [visibleColumns, setVisibleColumns] = useState({
+    status: true,
+    metadata: true,
+    source: true,
+    actions: true,
+  });
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [organization, setOrganization] = useState(null);
+  const [dbHealth, setDbHealth] = useState(null);
   const [filters, setFilters] = useState({
     search: '',
-    status: sectionType === 'all' ? '' : 'published',
+    status: '',
     source: '',
     language: '',
     category: '',
@@ -186,7 +198,7 @@ function ContentLibraryPage() {
   useEffect(() => {
     setFilters((current) => ({
       ...current,
-      status: sectionType === 'all' ? current.status : 'published',
+      status: '',
     }));
     setSelectedContentIds([]);
   }, [sectionType]);
@@ -215,6 +227,36 @@ function ContentLibraryPage() {
       ? 'Manage episodic media, review metadata quality, and publish clean entries.'
       : 'Scan server media, review duplicates, filter the library, and control what goes live.';
 
+  useEffect(() => {
+    try {
+      const rawPresets = localStorage.getItem(`admin-content-presets-${sectionType}`);
+      const rawColumns = localStorage.getItem(`admin-content-columns-${sectionType}`);
+      setSavedPresets(rawPresets ? JSON.parse(rawPresets) : []);
+      setVisibleColumns(rawColumns ? JSON.parse(rawColumns) : {
+        status: true,
+        metadata: true,
+        source: true,
+        actions: true,
+      });
+    } catch {
+      setSavedPresets([]);
+      setVisibleColumns({
+        status: true,
+        metadata: true,
+        source: true,
+        actions: true,
+      });
+    }
+  }, [sectionType]);
+
+  useEffect(() => {
+    localStorage.setItem(`admin-content-presets-${sectionType}`, JSON.stringify(savedPresets));
+  }, [savedPresets, sectionType]);
+
+  useEffect(() => {
+    localStorage.setItem(`admin-content-columns-${sectionType}`, JSON.stringify(visibleColumns));
+  }, [sectionType, visibleColumns]);
+
   const apiParams = useMemo(() => ({
     ...(sectionType === 'movie' ? { type: 'movie' } : {}),
     ...(sectionType === 'series' ? { type: 'series' } : {}),
@@ -226,6 +268,7 @@ function ContentLibraryPage() {
     ...(filters.collection ? { collection: filters.collection } : {}),
     ...(filters.tag ? { tag: filters.tag } : {}),
     ...(filters.sourceRootId ? { sourceRootId: filters.sourceRootId } : {}),
+    ...(filters.duplicatesOnly ? { duplicatesOnly: 'true' } : {}),
     page: pagination.page,
     limit: pagination.limit,
   }), [
@@ -238,6 +281,7 @@ function ContentLibraryPage() {
     filters.collection,
     filters.tag,
     filters.sourceRootId,
+    filters.duplicatesOnly,
     pagination.page,
     pagination.limit,
   ]);
@@ -251,10 +295,7 @@ function ContentLibraryPage() {
         : sectionType === 'series'
           ? adminService.getSeries(apiParams)
           : adminService.getContent(apiParams));
-      const sourceContent = contentResponse?.items || [];
-      const nextContent = filters.duplicatesOnly
-        ? sourceContent.filter((item) => Number(item.duplicateCount || 0) > 0)
-        : sourceContent;
+      const nextContent = contentResponse?.items || [];
 
       setAllContent(nextContent);
       setPagination((current) => ({ ...current, total: contentResponse?.total || 0 }));
@@ -265,7 +306,7 @@ function ContentLibraryPage() {
       setLoading(false);
       setContentRefreshing(false);
     }
-  }, [apiParams, filters.duplicatesOnly, sectionType]);
+  }, [apiParams, sectionType]);
 
   useEffect(() => {
     loadContentData();
@@ -282,6 +323,7 @@ function ContentLibraryPage() {
         healthResponse,
         logsResponse,
         currentJobResponse,
+        dbHealthResponse,
       ] = await Promise.all([
         adminService.getScannerRoots(),
         adminService.getScannerDrafts(),
@@ -290,6 +332,7 @@ function ContentLibraryPage() {
         adminService.getScannerHealth(),
         adminService.getScannerLogs(8),
         adminService.getCurrentScannerJob(),
+        adminService.getDbHealth(),
       ]);
 
       const baseRoots = rootsResponse?.items || [];
@@ -305,6 +348,7 @@ function ContentLibraryPage() {
       setHealth(healthResponse || {});
       setLogs(logsResponse?.items || []);
       setCurrentJob(currentJobResponse?.job || {});
+      setDbHealth(dbHealthResponse || null);
       setSelectedRootIds((current) => (current.length ? current : nextRoots.map((root) => root.id)));
     } catch (loadError) {
       setError((current) => current || loadError.message || 'Failed to load content library panels.');
@@ -412,7 +456,7 @@ function ContentLibraryPage() {
   const resetFilters = () => {
     setFilters({
       search: '',
-      status: sectionType === 'all' ? '' : 'published',
+      status: '',
       source: '',
       language: '',
       category: '',
@@ -460,7 +504,8 @@ function ContentLibraryPage() {
       setScanLoading(true);
       setError('');
       setScanStateLabel('Starting scanner...');
-      await adminService.runScanner(selectedRootIds);
+      const shouldScanAllRoots = !selectedRootIds.length || selectedRootIds.length === roots.length;
+      await adminService.runScanner(shouldScanAllRoots ? [] : selectedRootIds);
 
       while (true) {
         await new Promise((resolve) => setTimeout(resolve, 4000));
@@ -500,19 +545,34 @@ function ContentLibraryPage() {
     }
   };
 
-  const handlePublish = async (id) => {
+  const handleStopScanner = async () => {
+    try {
+      setScanLoading(true);
+      setError('');
+      await adminService.stopScanner();
+      setScanStateLabel('Scanner stopped.');
+      await Promise.all([loadAuxiliaryData(), loadContentData()]);
+    } catch (stopError) {
+      setError(stopError.message || 'Failed to stop scanner.');
+    } finally {
+      setScanLoading(false);
+      setTimeout(() => setScanStateLabel(''), 3500);
+    }
+  };
+
+  const handlePublish = useCallback(async (id) => {
     const item = await adminService.publishContent(id);
     setAllContent((current) => mergeContentItem(current, item));
     loadAuxiliaryData();
-  };
+  }, [loadAuxiliaryData]);
 
-  const handleUnpublish = async (id) => {
+  const handleUnpublish = useCallback(async (id) => {
     const item = await adminService.unpublishContent(id);
     setAllContent((current) => mergeContentItem(current, item));
     loadAuxiliaryData();
-  };
+  }, [loadAuxiliaryData]);
 
-  const handleDelete = async (id) => {
+  const flushDelete = useCallback(async (id) => {
     try {
       setError('');
       await adminService.deleteContent(id);
@@ -522,9 +582,27 @@ function ContentLibraryPage() {
       loadAuxiliaryData();
     } catch (deleteError) {
       setError(deleteError.message || 'Failed to delete content.');
-    } finally {
-      setDeleteTarget(null);
     }
+  }, [loadAuxiliaryData]);
+
+  const handleDelete = (id) => {
+    const target = allContent.find((item) => item.id === Number(id));
+    if (!target) {
+      return;
+    }
+    if (pendingDelete?.timer) {
+      clearTimeout(pendingDelete.timer);
+    }
+    setPendingDelete({
+      id: target.id,
+      title: target.title,
+      timer: setTimeout(() => {
+        flushDelete(target.id);
+        setPendingDelete(null);
+      }, 5000),
+    });
+    setDeleteTarget(null);
+    setScanStateLabel(`"${target.title}" will be deleted in 5s.`);
   };
 
   const handleBulkDelete = async () => {
@@ -550,6 +628,21 @@ function ContentLibraryPage() {
       setTimeout(() => setScanStateLabel(''), 4000);
     }
   };
+
+  const undoPendingDelete = () => {
+    if (!pendingDelete) {
+      return;
+    }
+    clearTimeout(pendingDelete.timer);
+    setPendingDelete(null);
+    setScanStateLabel('Delete cancelled.');
+  };
+
+  useEffect(() => () => {
+    if (pendingDelete?.timer) {
+      clearTimeout(pendingDelete.timer);
+    }
+  }, [pendingDelete]);
 
   const handleDuplicateCleanup = async () => {
     try {
@@ -611,6 +704,92 @@ function ContentLibraryPage() {
     }
   };
 
+  const handleBulkStatusUpdate = async (status) => {
+    if (!selectedContentIds.length) {
+      return;
+    }
+
+    try {
+      setBulkStatusLoading(true);
+      setError('');
+      const action = status === 'published' ? adminService.publishContent : adminService.unpublishContent;
+      const updatedItems = await Promise.all(selectedContentIds.map((id) => action(id)));
+      setAllContent((current) => current.map((item) => (
+        updatedItems.find((updatedItem) => updatedItem.id === item.id) || item
+      )));
+      setScanStateLabel(`${status === 'published' ? 'Published' : 'Unpublished'} ${updatedItems.length} selected items.`);
+      await loadAuxiliaryData();
+    } catch (bulkError) {
+      setError(bulkError.message || 'Bulk status update failed.');
+    } finally {
+      setBulkStatusLoading(false);
+      setTimeout(() => setScanStateLabel(''), 4000);
+    }
+  };
+
+  const saveCurrentPreset = () => {
+    const name = presetName.trim() || `Preset ${savedPresets.length + 1}`;
+    const nextPreset = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      filters,
+    };
+    setSavedPresets((current) => [nextPreset, ...current].slice(0, 12));
+    setPresetName('');
+  };
+
+  const applyPreset = (preset) => {
+    setFilters({ ...preset.filters });
+    setSearchInput(preset.filters.search || '');
+    setPagination((current) => ({ ...current, page: 1 }));
+  };
+
+  const removePreset = (presetId) => {
+    setSavedPresets((current) => current.filter((preset) => preset.id !== presetId));
+  };
+
+  const toggleColumn = (columnKey) => {
+    setVisibleColumns((current) => ({ ...current, [columnKey]: !current[columnKey] }));
+  };
+
+  const exportVisibleContentCsv = () => {
+    if (!allContent.length) {
+      setError('No visible content to export.');
+      return;
+    }
+
+    const header = ['id', 'title', 'type', 'status', 'sourceType', 'language', 'category', 'collection', 'year', 'metadataStatus', 'metadataConfidence', 'duplicateCount'];
+    const escapeCsv = (value) => {
+      const text = String(value ?? '');
+      if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+        return `"${text.replace(/"/g, '""')}"`;
+      }
+      return text;
+    };
+    const rows = allContent.map((item) => ([
+      item.id,
+      item.title,
+      item.type,
+      item.status,
+      item.sourceType,
+      item.language,
+      item.category,
+      item.collection,
+      item.year,
+      item.metadataStatus,
+      item.metadataConfidence,
+      item.duplicateCount,
+    ].map(escapeCsv).join(',')));
+    const csv = `${header.join(',')}\n${rows.join('\n')}`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `content-library-${sectionType}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const totalPages = Math.max(1, Math.ceil((pagination.total || 0) / pagination.limit));
   const pageWindow = useMemo(() => {
     const start = Math.max(1, pagination.page - 2);
@@ -629,6 +808,41 @@ function ContentLibraryPage() {
       setPagination((current) => ({ ...current, page: nextPage }));
     });
   };
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      const activeTag = document.activeElement?.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'SELECT' || activeTag === 'TEXTAREA') {
+        return;
+      }
+      if (selectedContentIds.length !== 1) {
+        return;
+      }
+      const selectedId = selectedContentIds[0];
+      const selectedItem = allContent.find((item) => item.id === selectedId);
+      if (!selectedItem) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === 'p') {
+        event.preventDefault();
+        handlePublish(selectedId);
+      } else if (key === 'u') {
+        event.preventDefault();
+        handleUnpublish(selectedId);
+      } else if (key === 'e') {
+        event.preventDefault();
+        navigate(`/admin/content/${selectedId}/edit`);
+      } else if (event.key === 'Delete') {
+        event.preventDefault();
+        setDeleteTarget({ mode: 'single', id: selectedId, title: selectedItem.title });
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [allContent, handlePublish, handleUnpublish, navigate, selectedContentIds]);
 
   return (
     <div style={styles.page}>
@@ -655,6 +869,13 @@ function ContentLibraryPage() {
               {scanLoading ? 'Scanning...' : `Run Scanner (${selectedRootIds.length || roots.length})`}
             </button>
             <button
+              onClick={handleStopScanner}
+              disabled={scanLoading || currentJob?.status !== 'running'}
+              style={styles.secondaryBtn}
+            >
+              Stop Scanner
+            </button>
+            <button
               onClick={handleDuplicateCleanup}
               disabled={duplicateCleanupLoading || loading}
               style={styles.secondaryBtn}
@@ -675,6 +896,12 @@ function ContentLibraryPage() {
 
       {error ? <div style={styles.errorBox}>{error}</div> : null}
       {scanStateLabel ? <div style={styles.infoBox}>{scanStateLabel}</div> : null}
+      {pendingDelete ? (
+        <div style={styles.undoToast}>
+          <span>Deleting "{pendingDelete.title}"...</span>
+          <button type="button" onClick={undoPendingDelete} style={styles.undoBtn}>Undo</button>
+        </div>
+      ) : null}
 
       <section style={styles.section}>
         <div style={styles.sectionHeader}>
@@ -852,6 +1079,9 @@ function ContentLibraryPage() {
                 <span style={styles.metaLine}>
                   {root.type || 'media'} | {root.language || 'Unknown'} | {root.category || 'Uncategorized'}
                 </span>
+                <span style={styles.metaLine}>
+                  Depth {root.maxDepth ?? '-'} | Batch {root.batchSize ?? '-'} | Candidates {root.estimatedCandidates ?? '-'}
+                </span>
                 <div style={styles.rootFooter}>
                   <span style={(root.checkable === false || root.exists) ? styles.okText : styles.warnText}>
                     {root.pathStatusLabel || (root.exists ? 'Available' : 'Missing')}
@@ -928,6 +1158,15 @@ function ContentLibraryPage() {
             </div>
             <div style={styles.healthCard}>
               <div style={styles.healthRow}>
+                <strong>Database Health</strong>
+                <span style={styles.metaInline}>{dbHealth?.databaseSize || '...'}</span>
+              </div>
+              <span style={styles.metaLine}>
+                Pool: total {dbHealth?.pool?.total ?? '-'} | idle {dbHealth?.pool?.idle ?? '-'} | waiting {dbHealth?.pool?.waiting ?? '-'}
+              </span>
+            </div>
+            <div style={styles.healthCard}>
+              <div style={styles.healthRow}>
                 <strong>Duplicate Review</strong>
                 <span style={styles.metaInline}>{duplicateStats.totalItems} items</span>
               </div>
@@ -983,6 +1222,7 @@ function ContentLibraryPage() {
             <span style={styles.summaryPill}>{selectedContentIds.length} selected</span>
             <span style={styles.summaryPill}>{allContent.length} visible</span>
             {contentRefreshing && !loading ? <span style={styles.summaryPill}>Refreshing...</span> : null}
+            <button type="button" onClick={exportVisibleContentCsv} style={styles.secondaryMiniBtn}>Export CSV</button>
           </div>
         </div>
 
@@ -1089,6 +1329,36 @@ function ContentLibraryPage() {
         </div>
 
         <div style={styles.bulkBar}>
+          <span style={styles.metaInline}>Saved Presets</span>
+          <div style={styles.actionRow}>
+            <input
+              type="text"
+              value={presetName}
+              onChange={(event) => setPresetName(event.target.value)}
+              placeholder="Preset name"
+              style={styles.bulkInput}
+            />
+            <button type="button" onClick={saveCurrentPreset} style={styles.secondaryMiniBtn}>Save Preset</button>
+            {savedPresets.slice(0, 5).map((preset) => (
+              <div key={preset.id} style={styles.presetChipWrap}>
+                <button type="button" onClick={() => applyPreset(preset)} style={styles.quickChip}>{preset.name}</button>
+                <button type="button" onClick={() => removePreset(preset.id)} style={styles.presetDelete}>x</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={styles.bulkBar}>
+          <span style={styles.metaInline}>Visible Columns</span>
+          <div style={styles.actionRow}>
+            <button type="button" onClick={() => toggleColumn('status')} style={{ ...styles.quickChip, ...(visibleColumns.status ? styles.quickChipActive : {}) }}>Status</button>
+            <button type="button" onClick={() => toggleColumn('metadata')} style={{ ...styles.quickChip, ...(visibleColumns.metadata ? styles.quickChipActive : {}) }}>Metadata</button>
+            <button type="button" onClick={() => toggleColumn('source')} style={{ ...styles.quickChip, ...(visibleColumns.source ? styles.quickChipActive : {}) }}>Source</button>
+            <button type="button" onClick={() => toggleColumn('actions')} style={{ ...styles.quickChip, ...(visibleColumns.actions ? styles.quickChipActive : {}) }}>Actions</button>
+          </div>
+        </div>
+
+        <div style={styles.bulkBar}>
           <span style={styles.metaInline}>
             Page size
           </span>
@@ -1138,15 +1408,31 @@ function ContentLibraryPage() {
               <button
                 type="button"
                 onClick={handleBulkOrganize}
-                disabled={bulkUpdateLoading}
+                disabled={bulkUpdateLoading || bulkStatusLoading}
                 style={styles.publishBtn}
               >
                 {bulkUpdateLoading ? 'Organizing...' : 'Bulk Organize'}
               </button>
               <button
                 type="button"
+                onClick={() => handleBulkStatusUpdate('published')}
+                disabled={bulkStatusLoading || bulkUpdateLoading}
+                style={styles.publishBtn}
+              >
+                {bulkStatusLoading ? 'Updating...' : 'Publish Selected'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBulkStatusUpdate('draft')}
+                disabled={bulkStatusLoading || bulkUpdateLoading}
+                style={styles.secondaryMiniBtn}
+              >
+                Unpublish Selected
+              </button>
+              <button
+                type="button"
                 onClick={() => setDeleteTarget({ mode: 'bulk', count: selectedContentIds.length })}
-                disabled={bulkDeleteLoading}
+                disabled={bulkDeleteLoading || bulkStatusLoading}
                 style={styles.deleteBtn}
               >
                 {bulkDeleteLoading ? 'Deleting...' : `Delete Selected (${selectedContentIds.length})`}
@@ -1163,20 +1449,26 @@ function ContentLibraryPage() {
                   <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAllVisible} />
                 </th>
                 <th style={styles.th}>Title</th>
-                <th style={styles.th}>Status</th>
-                <th style={styles.th}>Metadata</th>
-                <th style={styles.th}>Source</th>
-                <th style={styles.th}>Actions</th>
+                {visibleColumns.status ? <th style={styles.th}>Status</th> : null}
+                {visibleColumns.metadata ? <th style={styles.th}>Metadata</th> : null}
+                {visibleColumns.source ? <th style={styles.th}>Source</th> : null}
+                {visibleColumns.actions ? <th style={styles.th}>Actions</th> : null}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} style={styles.tableEmpty}>Loading first page...</td>
+                  <td colSpan={2 + Number(visibleColumns.status) + Number(visibleColumns.metadata) + Number(visibleColumns.source) + Number(visibleColumns.actions)} style={styles.tableEmpty}>Loading first page...</td>
                 </tr>
               ) : !allContent.length ? (
                 <tr>
-                  <td colSpan={6} style={styles.tableEmpty}>No content matched the current filters.</td>
+                  <td colSpan={2 + Number(visibleColumns.status) + Number(visibleColumns.metadata) + Number(visibleColumns.source) + Number(visibleColumns.actions)} style={styles.tableEmpty}>
+                    No content matched the current filters.
+                    <div style={styles.actionRow}>
+                      <button type="button" onClick={resetFilters} style={styles.secondaryMiniBtn}>Clear Filters</button>
+                      <button type="button" onClick={() => startTransition(() => setPagination((current) => ({ ...current, page: 1 })))} style={styles.secondaryMiniBtn}>Back To Page 1</button>
+                    </div>
+                  </td>
                 </tr>
               ) : allContent.map((item) => (
                 <tr key={item.id} style={styles.tableRow}>
@@ -1215,48 +1507,56 @@ function ContentLibraryPage() {
                       </div>
                     </div>
                   </td>
-                  <td style={styles.td}>
-                    <span
-                      style={{
-                        ...styles.statusPill,
-                        ...(item.status === 'published' ? styles.statusPublished : styles.statusDraft),
-                      }}
-                    >
-                      {item.status}
-                    </span>
-                  </td>
-                  <td style={styles.td}>
-                    <div style={{ ...styles.signalPill, ...getMetadataTone(item) }}>
-                      {item.metadataStatus || 'pending'}
-                    </div>
-                    <span style={styles.metaLine}>{item.metadataConfidence || 0}% confidence</span>
-                    <span style={styles.metaLine}>Updated: {formatWhen(item.metadataUpdatedAt || item.updatedAt)}</span>
-                  </td>
-                  <td style={styles.td}>
-                    <span style={styles.metaLine}>Type: {item.sourceType || '-'}</span>
-                    <span style={styles.metaLine}>Trending: {item.trendingScore || 0}</span>
-                    <span style={styles.metaLine}>Duplicates: {item.duplicateCount || 0}</span>
-                    {item.featuredOrder ? <span style={styles.metaLine}>Feature Slot: {item.featuredOrder}</span> : null}
-                    {item.adminNotes ? <span style={styles.metaLine}>Note: {item.adminNotes}</span> : null}
-                  </td>
-                  <td style={styles.td}>
-                    <div style={styles.actionRow}>
-                      {item.videoUrl ? <Link to={`/watch/${item.id}`} style={styles.secondaryMiniBtn}>Play</Link> : null}
-                      <Link to={`/admin/content/${item.id}/edit`} style={styles.secondaryMiniBtn}>Edit</Link>
-                      {item.status === 'published' ? (
-                        <button type="button" onClick={() => handleUnpublish(item.id)} style={styles.secondaryMiniBtn}>Unpublish</button>
-                      ) : (
-                        <button type="button" onClick={() => handlePublish(item.id)} style={styles.publishBtn}>Publish</button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget({ mode: 'single', id: item.id, title: item.title })}
-                        style={styles.deleteBtn}
+                  {visibleColumns.status ? (
+                    <td style={styles.td}>
+                      <span
+                        style={{
+                          ...styles.statusPill,
+                          ...(item.status === 'published' ? styles.statusPublished : styles.statusDraft),
+                        }}
                       >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+                        {item.status}
+                      </span>
+                    </td>
+                  ) : null}
+                  {visibleColumns.metadata ? (
+                    <td style={styles.td}>
+                      <div style={{ ...styles.signalPill, ...getMetadataTone(item) }}>
+                        {item.metadataStatus || 'pending'}
+                      </div>
+                      <span style={styles.metaLine}>{item.metadataConfidence || 0}% confidence</span>
+                      <span style={styles.metaLine}>Updated: {formatWhen(item.metadataUpdatedAt || item.updatedAt)}</span>
+                    </td>
+                  ) : null}
+                  {visibleColumns.source ? (
+                    <td style={styles.td}>
+                      <span style={styles.metaLine}>Type: {item.sourceType || '-'}</span>
+                      <span style={styles.metaLine}>Trending: {item.trendingScore || 0}</span>
+                      <span style={styles.metaLine}>Duplicates: {item.duplicateCount || 0}</span>
+                      {item.featuredOrder ? <span style={styles.metaLine}>Feature Slot: {item.featuredOrder}</span> : null}
+                      {item.adminNotes ? <span style={styles.metaLine}>Note: {item.adminNotes}</span> : null}
+                    </td>
+                  ) : null}
+                  {visibleColumns.actions ? (
+                    <td style={styles.td}>
+                      <div style={styles.actionRow}>
+                        {item.videoUrl ? <Link to={`/watch/${item.id}`} style={styles.secondaryMiniBtn}>Play</Link> : null}
+                        <Link to={`/admin/content/${item.id}/edit`} style={styles.secondaryMiniBtn}>Edit</Link>
+                        {item.status === 'published' ? (
+                          <button type="button" onClick={() => handleUnpublish(item.id)} style={styles.secondaryMiniBtn}>Unpublish</button>
+                        ) : (
+                          <button type="button" onClick={() => handlePublish(item.id)} style={styles.publishBtn}>Publish</button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget({ mode: 'single', id: item.id, title: item.title })}
+                          style={styles.deleteBtn}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -1443,12 +1743,12 @@ const styles = {
   quickChipClear: { padding: '8px 12px', borderRadius: '999px', background: 'rgba(255,90,95,0.12)', border: '1px solid rgba(255,90,95,0.18)', color: '#ff9ea2', fontWeight: '700', fontSize: '0.82rem' },
   bulkBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' },
   bulkInput: { padding: '9px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'var(--text-primary)', fontSize: '0.82rem', minWidth: '150px' },
-  tableWrap: { overflowX: 'auto' },
+  tableWrap: { overflowX: 'auto', maxHeight: '72vh', overflowY: 'auto' },
   table: { width: '100%', borderCollapse: 'separate', borderSpacing: '0 10px', minWidth: '1040px' },
   tableTablet: { minWidth: '880px' },
   tableMobile: { minWidth: '760px' },
-  th: { textAlign: 'left', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: '0.75rem', padding: '0 12px 6px' },
-  thCheckbox: { width: '36px', padding: '0 8px 6px 12px' },
+  th: { position: 'sticky', top: 0, zIndex: 2, textAlign: 'left', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: '0.75rem', padding: '10px 12px 8px', background: 'rgba(9, 17, 28, 0.96)', backdropFilter: 'blur(6px)' },
+  thCheckbox: { position: 'sticky', top: 0, zIndex: 2, width: '36px', padding: '10px 8px 8px 12px', background: 'rgba(9, 17, 28, 0.96)' },
   tableRow: { background: 'rgba(255,255,255,0.03)' },
   td: { padding: '14px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)', verticalAlign: 'top' },
   tdCheckbox: { padding: '18px 8px 18px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)', width: '36px', verticalAlign: 'top' },
@@ -1481,6 +1781,10 @@ const styles = {
   paginationBtnActive: { background: 'linear-gradient(135deg, rgba(255,116,79,0.24), rgba(125,249,255,0.16))', borderColor: 'rgba(125,249,255,0.18)' },
   pageJumpGroup: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
   pageJumpInput: { width: '72px', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'var(--text-primary)', fontSize: '0.82rem' },
+  presetChipWrap: { display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.04)', borderRadius: '999px', paddingRight: '6px' },
+  presetDelete: { width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(255,90,95,0.16)', color: '#ff9ea2', fontWeight: '700', fontSize: '0.72rem', lineHeight: 1 },
+  undoToast: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', borderRadius: '14px', background: 'rgba(249, 115, 22, 0.16)', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#fdba74' },
+  undoBtn: { padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)', color: '#fff', fontWeight: '700', fontSize: '0.8rem' },
 };
 
 export default ContentLibraryPage;

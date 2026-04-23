@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const { getJwtSecret } = require('../config/auth');
 
-const SECRET = process.env.JWT_SECRET || 'isp-secret-key-change-in-production';
+const SECRET = getJwtSecret();
 
 function requireAdminAuth(req, res, next) {
   const header = req.headers.authorization || '';

@@ -8,8 +8,10 @@ const scannerLogPath = path.resolve(__dirname, 'scanner-log.json');
 const scannerStatePath = path.resolve(__dirname, 'scanner-state.json');
 const scannerRuntimePath = path.resolve(__dirname, 'scanner-runtime.json');
 const MAX_SCANNER_RUNS = 30;
-const DEFAULT_ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const DEFAULT_ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || '$2a$10$ejyljPiCt5J0tvO68DS99OnzyystXkHwgn9pN44txXcxGs/XLlKtK';
+const NODE_ENV = String(process.env.NODE_ENV || 'development').toLowerCase();
+const IS_PRODUCTION = NODE_ENV === 'production';
+const DEFAULT_ADMIN_USERNAME = process.env.ADMIN_USERNAME || (IS_PRODUCTION ? '' : 'admin');
+const DEFAULT_ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || (IS_PRODUCTION ? '' : '$2a$10$ejyljPiCt5J0tvO68DS99OnzyystXkHwgn9pN44txXcxGs/XLlKtK');
 const APP_STATE_DEFAULTS = {
   scanner_roots: [],
   scanner_log: { runs: [] },
@@ -71,6 +73,14 @@ async function ensureContentStore() {
           updated_at TIMESTAMPTZ DEFAULT NOW()
         )
       `);
+      await db.query('CREATE INDEX IF NOT EXISTS idx_content_catalog_payload_gin ON content_catalog USING GIN (payload)');
+      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_status ON content_catalog ((payload->>'status'))");
+      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_type ON content_catalog ((payload->>'type'))");
+      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_genre ON content_catalog ((payload->>'genre'))");
+      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_language ON content_catalog ((payload->>'language'))");
+      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_collection ON content_catalog ((payload->>'collection'))");
+      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_search ON content_catalog USING GIN (LOWER(COALESCE(payload->>'title', '') || ' ' || COALESCE(payload->>'genre', '') || ' ' || COALESCE(payload->>'language', '') || ' ' || COALESCE(payload->>'category', '') || ' ' || COALESCE(payload->>'description', '') || ' ' || COALESCE(payload->>'originalTitle', '') || ' ' || COALESCE(payload->>'year', '')) gin_trgm_ops)");
+      
       await db.query(`
         CREATE TABLE IF NOT EXISTS app_state (
           key TEXT PRIMARY KEY,
@@ -120,6 +130,9 @@ async function ensureContentStore() {
           UNIQUE (user_id, content_type, content_id)
         )
       `);
+      if (IS_PRODUCTION && (!DEFAULT_ADMIN_USERNAME || !DEFAULT_ADMIN_PASSWORD_HASH)) {
+        throw new Error('ADMIN_USERNAME and ADMIN_PASSWORD_HASH must be configured in production.');
+      }
       await db.query(`
         INSERT INTO admin_users (username, password_hash, role, updated_at)
         VALUES ($1, $2, 'super_admin', NOW())
@@ -271,6 +284,14 @@ function buildCatalogFilterClauses(filters = {}, params = []) {
 
   if (filters.tag) {
     clauses.push(`COALESCE(payload->'tags', '[]'::jsonb) ? ${push(String(filters.tag))}`);
+  }
+
+  if (filters.year) {
+    clauses.push(`payload->>'year' = ${push(String(filters.year))}`);
+  }
+
+  if (filters.duplicatesOnly) {
+    clauses.push(`CASE WHEN (payload->>'duplicateCount') ~ '^\\d+$' THEN (payload->>'duplicateCount')::int ELSE 0 END > 0`);
   }
 
   if (filters.search) {
@@ -612,7 +633,7 @@ function attachDuplicateMetadata(item, groups) {
   };
 }
 
-async function listItems(filters = {}, offset = 0, limit = null) {
+async function listItems(filters = {}, offset = 0, limit = null, sort = 'latest') {
   await ensureContentStore();
   const params = [];
   const clauses = buildCatalogFilterClauses(filters, params);
@@ -625,6 +646,22 @@ async function listItems(filters = {}, offset = 0, limit = null) {
     params,
   );
   const total = Number(countResult.rows[0]?.count || 0);
+
+  let orderClause = '';
+  if (sort === 'popular' || sort === 'rating') {
+    orderClause = "ORDER BY CASE WHEN (payload->>'rating') ~ '^\\d+(\\.\\d+)?$' THEN (payload->>'rating')::numeric ELSE 0 END DESC NULLS LAST, id DESC";
+  } else if (sort === 'trending') {
+    orderClause = "ORDER BY CASE WHEN (payload->>'trendingScore') ~ '^\\d+(\\.\\d+)?$' THEN (payload->>'trendingScore')::numeric ELSE 0 END DESC NULLS LAST, id DESC";
+  } else if (sort === 'featured') {
+    orderClause = "ORDER BY CASE WHEN (payload->>'featuredOrder') ~ '^\\d+(\\.\\d+)?$' THEN (payload->>'featuredOrder')::numeric ELSE 0 END DESC NULLS LAST, CASE WHEN (payload->>'featured') = 'true' THEN 1 ELSE 0 END DESC NULLS LAST, id DESC";
+  } else {
+    orderClause = `ORDER BY COALESCE(
+      CASE WHEN COALESCE(payload->>'publishedAt', '') ~ '^\\d{4}-\\d{2}-\\d{2}(?:[T\\s].*)?$' THEN (payload->>'publishedAt')::timestamptz END,
+      CASE WHEN COALESCE(payload->>'releasedAt', '') ~ '^\\d{4}-\\d{2}-\\d{2}(?:[T\\s].*)?$' THEN (payload->>'releasedAt')::timestamptz END,
+      CASE WHEN COALESCE(payload->>'updatedAt', '') ~ '^\\d{4}-\\d{2}-\\d{2}(?:[T\\s].*)?$' THEN (payload->>'updatedAt')::timestamptz END,
+      updated_at
+    ) DESC, id DESC`;
+  }
 
   const listParams = [...params];
   let pagingClause = '';
@@ -641,7 +678,7 @@ async function listItems(filters = {}, offset = 0, limit = null) {
     `SELECT payload
      FROM content_catalog
      ${whereClause}
-     ORDER BY COALESCE((payload->>'updatedAt')::timestamptz, updated_at) DESC, id DESC
+     ${orderClause}
      ${pagingClause}`,
     listParams,
   );
@@ -703,44 +740,45 @@ function scoreSearchResult(item, query) {
 async function searchItems(query, filters = {}) {
   const normalizedQuery = String(query || '').trim();
   if (!normalizedQuery) {
-    return [];
+    return { items: [], total: 0 };
   }
 
-  let { items } = await listItems({ status: filters.status || 'published' });
+  await ensureContentStore();
+  const searchFilters = { 
+    ...filters, 
+    status: filters.status || 'published',
+    search: normalizedQuery 
+  };
+  
+  const params = [];
+  const clauses = buildCatalogFilterClauses(searchFilters, params);
+  const whereClause = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 
-  if (filters.type) {
-    items = items.filter((item) => item.type === filters.type);
-  }
+  const result = await db.query(
+    `SELECT payload
+     FROM content_catalog
+     ${whereClause}
+     LIMIT 500`,
+    params,
+  );
 
-  if (filters.language) {
-    items = items.filter((item) => item.language === filters.language);
-  }
-
-  if (filters.genre) {
-    items = items.filter((item) => String(item.genre || '').toLowerCase().includes(String(filters.genre).toLowerCase()));
-  }
-
-  return items
-    .filter((item) => [
-      item.title,
-      item.genre,
-      item.language,
-      item.category,
-      item.description,
-      item.collection,
-      item.originalTitle,
-      item.year,
-    ].join(' ').toLowerCase().includes(normalizedQuery.toLowerCase()))
+  const items = result.rows.map((row) => normalizeItem(row.payload));
+  const duplicateGroups = await getDuplicateGroupsForItems(items);
+  
+  const scoredItems = items
     .map((item) => ({
-      ...item,
+      ...attachDuplicateMetadata(item, duplicateGroups),
       searchScore: scoreSearchResult(item, normalizedQuery),
     }))
     .filter((item) => item.searchScore > 0)
     .sort((left, right) => right.searchScore - left.searchScore || (right.trendingScore || 0) - (left.trendingScore || 0));
+
+  return { items: scoredItems, total: scoredItems.length };
 }
 
 async function getSuggestions(query, limit = 8) {
-  const matches = (await searchItems(query, { status: 'published' })).slice(0, limit);
+  const result = await searchItems(query, { status: 'published' });
+  const matches = (result.items || []).slice(0, limit);
   return matches.map((item) => ({
     id: item.id,
     title: item.title,
@@ -1217,6 +1255,48 @@ async function markWatchProgressComplete(externalUserId, { contentType, contentI
   return upsertWatchProgress(externalUserId, { contentType, contentId, position: 0, duration: 0, completed: true });
 }
 
+function buildRecentSearchKey(externalUserId) {
+  return `recent_searches:${String(externalUserId || 'guest').trim() || 'guest'}`;
+}
+
+async function recordRecentSearch(externalUserId, query, metadata = {}) {
+  const normalizedQuery = String(query || '').trim();
+  if (!normalizedQuery || normalizedQuery.length < 2) {
+    return [];
+  }
+
+  const key = buildRecentSearchKey(externalUserId);
+  const current = await getAppState(key, { items: [] });
+  const items = Array.isArray(current?.items) ? current.items : [];
+  const now = new Date().toISOString();
+  const normalizedType = String(metadata.type || '').trim();
+  const normalizedGenre = String(metadata.genre || '').trim();
+  const normalizedLanguage = String(metadata.language || '').trim();
+  const normalizedYear = String(metadata.year || '').trim();
+
+  const nextItems = [
+    {
+      query: normalizedQuery,
+      type: normalizedType,
+      genre: normalizedGenre,
+      language: normalizedLanguage,
+      year: normalizedYear,
+      searchedAt: now,
+    },
+    ...items.filter((item) => String(item.query || '').trim().toLowerCase() !== normalizedQuery.toLowerCase()),
+  ].slice(0, 20);
+
+  await setAppState(key, { items: nextItems });
+  return nextItems;
+}
+
+async function getRecentSearches(externalUserId, limit = 10) {
+  const key = buildRecentSearchKey(externalUserId);
+  const state = await getAppState(key, { items: [] });
+  const items = Array.isArray(state?.items) ? state.items : [];
+  return items.slice(0, Math.max(1, Number(limit) || 10));
+}
+
 async function getMediaNormalizerState() {
   return getAppState('media_normalizer_state', null);
 }
@@ -1251,6 +1331,7 @@ module.exports = {
   getMediaNormalizerLog,
   getMediaNormalizerState,
   getRecentItems,
+  getRecentSearches,
   getScannerRuns,
   getSuggestions,
   getStats,
@@ -1263,6 +1344,7 @@ module.exports = {
   markWatchProgressComplete,
   normalizeTitleKey,
   recordScannerRun,
+  recordRecentSearch,
   refreshCatalogReferencesForNormalizedFile,
   removeWatchlistEntry,
   saveMediaNormalizerState,
