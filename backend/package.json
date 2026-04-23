@@ -1,0 +1,31 @@
+{
+  "name": "isp-entertainment-portal-server",
+  "version": "1.1.0",
+  "description": "ISP Local Entertainment Portal Backend",
+  "main": "src/index.js",
+  "scripts": {
+    "db:init": "node scripts/init-content-store.js",
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "bulk:enrich-publish": "node scripts/bulk-enrich-publish.js",
+    "media:analyze": "node scripts/analyze-media-compat.js",
+    "media:audit-player": "node scripts/audit-player-library.js",
+    "media:optimize-cache": "node scripts/optimize-media-cache.js",
+    "media:prewarm-player": "node scripts/prewarm-player-cache.js",
+    "media:normalize-library": "node scripts/normalize-media-library.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "joi": "^17.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

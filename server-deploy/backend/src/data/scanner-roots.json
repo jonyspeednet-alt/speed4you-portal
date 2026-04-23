@@ -1,0 +1,101 @@
+[
+  {
+    "id": "english-movies",
+    "label": "English Movies",
+    "type": "movie",
+    "scanPath": "/var/www/html/English Movies",
+    "publicBaseUrl": "/English%20Movies",
+    "language": "English",
+    "category": "English Movies"
+  },
+  {
+    "id": "bangla-movies",
+    "label": "Bangla Movies",
+    "type": "movie",
+    "scanPath": "/var/www/html/Bangla Movies",
+    "publicBaseUrl": "/Bangla%20Movies",
+    "language": "Bengali",
+    "category": "Bangla Movies"
+  },
+  {
+    "id": "hindi-movies",
+    "label": "Hindi Movies",
+    "type": "movie",
+    "scanPath": "/var/www/html/Hindi Movies",
+    "publicBaseUrl": "/Hindi%20Movies",
+    "language": "Hindi",
+    "category": "Hindi Movies"
+  },
+  {
+    "id": "hindi-dubbed-movies",
+    "label": "Hindi Dubbed Movies",
+    "type": "movie",
+    "scanPath": "/var/www/html/Hindi Dubbed Movies",
+    "publicBaseUrl": "/Hindi%20Dubbed%20Movies",
+    "language": "Hindi",
+    "category": "Hindi Dubbed Movies"
+  },
+  {
+    "id": "animation-movies",
+    "label": "Animation Movies",
+    "type": "movie",
+    "scanPath": "/var/www/html/Animation_Movies",
+    "publicBaseUrl": "/Animation_Movies",
+    "language": "English",
+    "category": "Animation Movies"
+  },
+  {
+    "id": "series-a-e",
+    "label": "TV/Web Series 0-9 A-E",
+    "type": "series",
+    "scanPath": "/var/www/html/TV_Series/TV_Web_Series-0-9_A-E",
+    "publicBaseUrl": "/TV_Series/TV_Web_Series-0-9_A-E",
+    "language": "English",
+    "category": "TV Series"
+  },
+  {
+    "id": "series-f-m",
+    "label": "TV/Web Series F-M",
+    "type": "series",
+    "scanPath": "/var/www/html/TV_Series/TV_Web_Series-F-M",
+    "publicBaseUrl": "/TV_Series/TV_Web_Series-F-M",
+    "language": "English",
+    "category": "TV Series"
+  },
+  {
+    "id": "series-n-s",
+    "label": "TV/Web Series N-S",
+    "type": "series",
+    "scanPath": "/var/www/html/TV_Series/TV_Web_Series-N-S",
+    "publicBaseUrl": "/TV_Series/TV_Web_Series-N-S",
+    "language": "English",
+    "category": "TV Series"
+  },
+  {
+    "id": "series-t",
+    "label": "TV/Web Series T",
+    "type": "series",
+    "scanPath": "/var/www/html/TV_Series/TV_Web_Series-T",
+    "publicBaseUrl": "/TV_Series/TV_Web_Series-T",
+    "language": "English",
+    "category": "TV Series"
+  },
+  {
+    "id": "series-u-z",
+    "label": "TV/Web Series U-Z",
+    "type": "series",
+    "scanPath": "/var/www/html/TV_Series/TV_Web_Series-U-Z",
+    "publicBaseUrl": "/TV_Series/TV_Web_Series-U-Z",
+    "language": "English",
+    "category": "TV Series"
+  },
+  {
+    "id": "english-tv-series",
+    "label": "English TV Series",
+    "type": "series",
+    "scanPath": "/var/www/html/TV_Series/English TV_Series",
+    "publicBaseUrl": "/TV_Series/English%20TV_Series",
+    "language": "English",
+    "category": "TV Series"
+  }
+]

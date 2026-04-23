@@ -1,0 +1,10 @@
+{
+  "name": "isp-entertainment-portal-workspace",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix frontend install && npm --prefix backend install",
+    "build": "npm --prefix frontend run build",
+    "dev": "node scripts/dev-runner.cjs",
+    "start": "node scripts/start-runner.cjs"
+  }
+}
