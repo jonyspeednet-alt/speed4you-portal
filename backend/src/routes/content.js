@@ -38,9 +38,8 @@ function sortByLatest(items) {
   });
 }
 
-function getPublishedItems() {
-  return listItems({ status: 'published' }).then((result) => result.items);
-}
+// Removed getPublishedItems() - use listItems({status:'published', offset, limit}) directly
+
 
 function normalizeQueryValue(value) {
   if (value === undefined || value === null) {
@@ -152,28 +151,19 @@ router.get('/browse', async (req, res) => {
   const sort = normalizeQueryValue(req.query.sort) || 'latest';
   const page = normalizePositiveInt(req.query.page, 1, { min: 1, max: 100000 });
   const limit = normalizePositiveInt(req.query.limit, 20, { min: 1, max: 100 });
-  let items = q
-    ? await searchItems(q, { type, genre, language, status: 'published' })
-    : await getPublishedItems();
+const baseFilters = { status: 'published' };
+  if (type) baseFilters.type = type;
+  if (genre) baseFilters.genre = genre;
+  if (language) baseFilters.language = language;
+  if (collection) baseFilters.collection = collection;
+  if (tag) baseFilters.tag = tag;
+  if (year) baseFilters.year = year;
 
-  if (!q && type) {
-    items = items.filter((item) => item.type === type);
-  }
-  if (!q && genre) {
-    items = items.filter((item) => (item.genre || '').toLowerCase().includes(String(genre).toLowerCase()));
-  }
-  if (!q && language) {
-    items = items.filter((item) => item.language === language);
-  }
-  if (collection) {
-    items = items.filter((item) => item.collection === collection);
-  }
-  if (tag) {
-    items = items.filter((item) => Array.isArray(item.tags) && item.tags.some((entry) => entry.toLowerCase() === tag.toLowerCase()));
-  }
-  if (year) {
-    items = items.filter((item) => Number(item.year) === Number(year));
-  }
+  let { items, total } = q
+    ? await searchItems(q, baseFilters)
+    : await listItems(baseFilters, (page - 1) * limit, limit);
+
+  // Server-side filtering/pagination now handles type/genre/etc
 
   if (q) {
     if (sort === 'trending') {
@@ -197,8 +187,8 @@ router.get('/browse', async (req, res) => {
 
   const offset = (page - 1) * limit;
   res.json({
-    items: items.slice(offset, offset + limit),
-    total: items.length,
+    items,
+    total: total || items.length,
     page,
     limit,
     query: q,

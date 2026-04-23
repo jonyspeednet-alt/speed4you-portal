@@ -1,5 +1,6 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { contentService, searchService } from '../services';
 import { useBreakpoint } from '../hooks';
 
@@ -72,62 +73,39 @@ function BrowsePage({ type }) {
     setPage(1);
   }, [deferredSearchText, selectedGenre, selectedLanguage, selectedCollection, sortBy, type]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const params = useMemo(() => ({
+    type,
+    genre: selectedGenre !== 'All' ? selectedGenre : undefined,
+    language: selectedLanguage !== 'All' ? selectedLanguage : undefined,
+    collection: selectedCollection !== 'All' ? selectedCollection : undefined,
+    q: deferredSearchText.trim() || undefined,
+    sort: sortBy,
+    limit: PAGE_SIZE,
+  }), [type, selectedGenre, selectedLanguage, selectedCollection, deferredSearchText, sortBy]);
 
-    async function fetchContent() {
-      const isLoadMore = page > 1;
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    error,
+  } = useInfiniteQuery({
+    queryKey: ['browse', params],
+    queryFn: ({ pageParam = 1 }) => contentService.browse({ ...params, page: pageParam }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const nextPage = allPages.length + 1;
+      return lastPage.total >= nextPage * PAGE_SIZE ? nextPage : undefined;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
-      try {
-        if (isLoadMore) {
-          setLoadingMore(true);
-        } else {
-          setLoading(true);
-        }
+  const content = useMemo(() => {
+    return data?.pages.flatMap(page => page.items || [])?.map(normalizeItem) || [];
+  }, [data]);
 
-        setError('');
-
-        const params = {
-          type,
-          genre: selectedGenre !== 'All' ? selectedGenre : undefined,
-          language: selectedLanguage !== 'All' ? selectedLanguage : undefined,
-          collection: selectedCollection !== 'All' ? selectedCollection : undefined,
-          q: deferredSearchText.trim() || undefined,
-          sort: sortBy,
-          page,
-          limit: PAGE_SIZE,
-        };
-
-        const result = await contentService.browse(params);
-        const nextItems = Array.isArray(result.items) ? result.items.map(normalizeItem) : [];
-
-        if (!cancelled) {
-          setContent((current) => (isLoadMore ? [...current, ...nextItems] : nextItems));
-          setTotal(Number(result.total || 0));
-        }
-      } catch (err) {
-        console.error('Failed to fetch content:', err);
-
-        if (!cancelled) {
-          if (!isLoadMore) {
-            setContent([]);
-          }
-          setError(err.message || 'Failed to load content.');
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-          setLoadingMore(false);
-        }
-      }
-    }
-
-    fetchContent();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [deferredSearchText, page, selectedCollection, selectedGenre, selectedLanguage, sortBy, type]);
+  const total = data?.pages[0]?.total || 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -188,7 +166,7 @@ function BrowsePage({ type }) {
       ? 'Track binge-worthy stories with clearer seasons, tighter search, and faster discovery.'
       : 'Explore the full premium catalog with sharper search, faster filters, and richer result intelligence.';
   const activeFilterCount = [selectedGenre !== 'All', selectedLanguage !== 'All', selectedCollection !== 'All', deferredSearchText.trim().length > 0, sortBy !== 'latest'].filter(Boolean).length;
-  const hasMore = content.length < total;
+  const hasMore = hasNextPage;
   const highRatedCount = filteredContent.filter((item) => Number(item.rating) >= 8).length;
   const reviewNeededCount = filteredContent.filter((item) => item.metadataStatus === 'needs_review').length;
   const newestYear = filteredContent.reduce((maxYear, item) => Math.max(maxYear, Number(item.year) || 0), 0);
