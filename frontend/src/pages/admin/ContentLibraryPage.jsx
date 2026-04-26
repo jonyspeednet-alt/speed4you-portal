@@ -59,6 +59,30 @@ function StatCard({ label, value, hint, accent = false }) {
   );
 }
 
+function ContentPoster({ src, alt, style, variant = 'table', fallbackText = 'No Art' }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!src || failed) {
+    return <div style={variant === 'preview' ? styles.posterPlaceholder : styles.tablePosterFallback}>{fallbackText}</div>;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      style={style}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+      referrerPolicy="no-referrer"
+    />
+  );
+}
+
+function resolvePosterSource(item) {
+  return item?.poster || item?.backdrop || '';
+}
+
 function toTagString(tags) {
   return Array.isArray(tags) ? tags.join(', ') : '';
 }
@@ -153,6 +177,7 @@ function ContentLibraryPage() {
   const [allContent, setAllContent] = useState([]);
   const [duplicateReview, setDuplicateReview] = useState(null);
   const [duplicateCleanupLoading, setDuplicateCleanupLoading] = useState(false);
+  const [pruneLoading, setPruneLoading] = useState(false);
   const [selectedRootIds, setSelectedRootIds] = useState([]);
   const [selectedContentIds, setSelectedContentIds] = useState([]);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
@@ -313,48 +338,93 @@ function ContentLibraryPage() {
   }, [loadContentData]);
 
   const loadAuxiliaryData = useCallback(async () => {
-    try {
-      setAuxLoading(true);
-      const [
-        rootsResponse,
-        draftsResponse,
-        duplicateReviewResponse,
-        organizationResponse,
-        healthResponse,
-        logsResponse,
-        currentJobResponse,
-        dbHealthResponse,
-      ] = await Promise.all([
-        adminService.getScannerRoots(),
-        adminService.getScannerDrafts(),
-        adminService.getDuplicateReview(),
-        adminService.getContentOrganization(sectionType === 'movie' ? { type: 'movie' } : sectionType === 'series' ? { type: 'series' } : {}),
-        adminService.getScannerHealth(),
-        adminService.getScannerLogs(8),
-        adminService.getCurrentScannerJob(),
-        adminService.getDbHealth(),
-      ]);
+    setAuxLoading(true);
 
-      const baseRoots = rootsResponse?.items || [];
-      const healthRoots = healthResponse?.roots || [];
-      const nextRoots = baseRoots.map((root) => {
-        const healthRoot = healthRoots.find((entry) => entry.id === root.id);
-        return healthRoot ? { ...root, ...healthRoot } : root;
-      });
-      setRoots(nextRoots);
-      setDrafts(draftsResponse?.items || []);
-      setDuplicateReview(duplicateReviewResponse || {});
-      setOrganization(organizationResponse || {});
-      setHealth(healthResponse || {});
-      setLogs(logsResponse?.items || []);
-      setCurrentJob(currentJobResponse?.job || {});
-      setDbHealth(dbHealthResponse || null);
-      setSelectedRootIds((current) => (current.length ? current : nextRoots.map((root) => root.id)));
-    } catch (loadError) {
-      setError((current) => current || loadError.message || 'Failed to load content library panels.');
-    } finally {
-      setAuxLoading(false);
-    }
+    const fetchRoots = async () => {
+      try {
+        const [rootsRes, healthRes] = await Promise.all([
+          adminService.getScannerRoots(),
+          adminService.getScannerHealth(),
+        ]);
+        const baseRoots = rootsRes?.items || [];
+        const healthRoots = healthRes?.roots || [];
+        const nextRoots = baseRoots.map((root) => {
+          const healthRoot = healthRoots.find((entry) => entry.id === root.id);
+          return healthRoot ? { ...root, ...healthRoot } : root;
+        });
+        setRoots(nextRoots);
+        setHealth(healthRes || {});
+        setSelectedRootIds((current) => (current.length ? current : nextRoots.map((root) => root.id)));
+      } catch (e) {
+        console.error('Failed to load roots/health', e);
+      }
+    };
+
+    const fetchDrafts = async () => {
+      try {
+        const res = await adminService.getScannerDrafts();
+        setDrafts(res?.items || []);
+      } catch (e) {
+        console.error('Failed to load drafts', e);
+      }
+    };
+
+    const fetchDuplicates = async () => {
+      try {
+        const res = await adminService.getDuplicateReview();
+        setDuplicateReview(res || {});
+      } catch (e) {
+        console.error('Failed to load duplicates', e);
+      }
+    };
+
+    const fetchOrganization = async () => {
+      try {
+        const res = await adminService.getContentOrganization(sectionType === 'movie' ? { type: 'movie' } : sectionType === 'series' ? { type: 'series' } : {});
+        setOrganization(res || {});
+      } catch (e) {
+        console.error('Failed to load organization', e);
+      }
+    };
+
+    const fetchLogs = async () => {
+      try {
+        const res = await adminService.getScannerLogs(8);
+        setLogs(res?.items || []);
+      } catch (e) {
+        console.error('Failed to load logs', e);
+      }
+    };
+
+    const fetchJob = async () => {
+      try {
+        const res = await adminService.getCurrentScannerJob();
+        setCurrentJob(res?.job || {});
+      } catch (e) {
+        console.error('Failed to load current job', e);
+      }
+    };
+
+    const fetchDbHealth = async () => {
+      try {
+        const res = await adminService.getDbHealth();
+        setDbHealth(res || null);
+      } catch (e) {
+        console.error('Failed to load DB health', e);
+      }
+    };
+
+    await Promise.allSettled([
+      fetchRoots(),
+      fetchDrafts(),
+      fetchDuplicates(),
+      fetchOrganization(),
+      fetchLogs(),
+      fetchJob(),
+      fetchDbHealth(),
+    ]);
+
+    setAuxLoading(false);
   }, [sectionType]);
 
   useEffect(() => {
@@ -659,6 +729,21 @@ function ContentLibraryPage() {
     }
   };
 
+  const handlePruneCatalog = async () => {
+    try {
+      setPruneLoading(true);
+      setError('');
+      const response = await adminService.pruneCatalog();
+      setScanStateLabel(`Catalog pruned. Removed ${response?.deletedCount || 0} garbage/missing items.`);
+      await Promise.all([loadContentData(), loadAuxiliaryData()]);
+    } catch (pruneError) {
+      setError(pruneError.message || 'Pruning failed.');
+    } finally {
+      setPruneLoading(false);
+      setTimeout(() => setScanStateLabel(''), 5000);
+    }
+  };
+
   const handleBulkOrganize = async () => {
     if (!selectedContentIds.length) {
       return;
@@ -881,6 +966,14 @@ function ContentLibraryPage() {
               style={styles.secondaryBtn}
             >
               {duplicateCleanupLoading ? 'Cleaning...' : 'Cleanup Duplicates'}
+            </button>
+            <button
+              onClick={handlePruneCatalog}
+              disabled={pruneLoading || loading}
+              style={styles.secondaryBtn}
+              title="Remove junk files and missing items from catalog"
+            >
+              {pruneLoading ? 'Pruning...' : 'Prune Catalog'}
             </button>
             <Link to="/admin/content/new" style={styles.ghostBtn}>Add Manual Content</Link>
           </div>
@@ -1110,11 +1203,13 @@ function ContentLibraryPage() {
           {spotlightDrafts.length ? spotlightDrafts.map((item) => (
               <article key={item.id} style={{ ...styles.draftCard, ...(isMobile ? styles.draftCardMobile : {}) }}>
                 <div style={styles.draftVisual}>
-                  {item.poster ? (
-                    <img src={item.poster} alt={item.title} style={styles.posterPreview} />
-                  ) : (
-                    <div style={styles.posterPlaceholder}>No Poster</div>
-                  )}
+                  <ContentPoster
+                    src={resolvePosterSource(item)}
+                    alt={item.title}
+                    style={styles.posterPreview}
+                    variant="preview"
+                    fallbackText="No Poster"
+                  />
                 </div>
                 <div style={styles.draftBody}>
                   <div style={styles.draftTop}>
@@ -1481,11 +1576,13 @@ function ContentLibraryPage() {
                   </td>
                   <td style={styles.td}>
                     <div style={styles.titleCell}>
-                      {item.poster ? (
-                        <img src={item.poster} alt={item.title} style={styles.tablePoster} />
-                      ) : (
-                        <div style={styles.tablePosterFallback}>No Art</div>
-                      )}
+                      <ContentPoster
+                        src={resolvePosterSource(item)}
+                        alt={item.title}
+                        style={styles.tablePoster}
+                        variant="table"
+                        fallbackText="No Art"
+                      />
                       <div>
                         <div style={styles.tableTitleRow}>
                           <strong style={styles.itemTitle}>{item.title}</strong>

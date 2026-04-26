@@ -37,12 +37,16 @@ router.get('/', validateQuery(moviesQuerySchema), async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
-  const movie = await getItemById(req.params.id);
-  if (!movie || movie.type !== 'movie') {
-    return res.status(404).json({ error: 'Movie not found' });
+router.get('/:id', async (req, res, next) => {
+  try {
+    const movie = await getItemById(req.params.id);
+    if (!movie || movie.type !== 'movie') {
+      return res.status(404).json({ error: 'Movie not found' });
+    }
+    res.json(movie);
+  } catch (error) {
+    next(error);
   }
-  res.json(movie);
 });
 
 module.exports = router;

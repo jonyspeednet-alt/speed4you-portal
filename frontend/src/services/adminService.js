@@ -41,8 +41,9 @@ export const adminService = {
   stopMediaNormalizer: () => apiClient('/admin/media-normalizer/stop', { method: 'POST' }).finally(clearAdminCache),
   getDuplicateReview: () => cachedGet('/admin/duplicates/review'),
   runDuplicateCleanup: () => apiClient('/admin/duplicates/cleanup', { method: 'POST' }).finally(clearAdminCache),
+  pruneCatalog: () => apiClient('/admin/maintenance/prune', { method: 'POST' }).finally(clearAdminCache),
   getScannerDrafts: (status = 'draft') => cachedGet('/admin/scanner/drafts', { status }),
-  
+
   // Content management
   getContent: (params = {}) => cachedGet('/admin/content', { ...params, summary: 'true' }),
   getContentOrganization: (params = {}) => cachedGet('/admin/content/organization', params),

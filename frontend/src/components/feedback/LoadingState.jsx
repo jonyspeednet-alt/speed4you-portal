@@ -1,13 +1,15 @@
 function LoadingState({ message = 'Loading...', fullScreen = false }) {
   return (
-    <div style={{
-      ...styles.container,
-      ...(fullScreen ? styles.fullScreen : {}),
-    }}>
-      <div style={styles.spinner}>
-        <div style={styles.circle} />
-        <div style={{ ...styles.circle, animationDelay: '0.2s' }} />
-        <div style={{ ...styles.circle, animationDelay: '0.4s' }} />
+    <div
+      style={{
+        ...styles.container,
+        ...(fullScreen ? styles.fullScreen : {}),
+      }}
+      role="status"
+      aria-label={message}
+    >
+      <div style={styles.ring} aria-hidden="true">
+        <div style={styles.ringInner} />
       </div>
       {message && <p style={styles.message}>{message}</p>}
     </div>
@@ -26,30 +28,28 @@ const styles = {
   fullScreen: {
     minHeight: '400px',
   },
-  spinner: {
-    display: 'flex',
-    gap: '4px',
-  },
-  circle: {
-    width: '8px',
-    height: '8px',
+  ring: {
+    width: '44px',
+    height: '44px',
     borderRadius: '50%',
-    background: 'var(--accent-red)',
-    animation: 'pulse 1s ease-in-out infinite',
+    background: 'conic-gradient(from 0deg, transparent 0%, var(--accent-red) 60%, transparent 100%)',
+    animation: 'spin 0.8s linear infinite',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ringInner: {
+    width: '34px',
+    height: '34px',
+    borderRadius: '50%',
+    background: 'var(--bg-primary)',
   },
   message: {
     color: 'var(--text-muted)',
-    fontSize: '0.9rem',
+    fontSize: '0.88rem',
+    fontWeight: '500',
+    letterSpacing: '0.01em',
   },
 };
-
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  @keyframes pulse {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.5); opacity: 0.5; }
-  }
-`;
-document.head.appendChild(styleSheet);
 
 export default LoadingState;

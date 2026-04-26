@@ -76,12 +76,13 @@ async function apiClient(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
   const endpointUrl = new URL(`${API_BASE}/api${endpoint}`, window.location.origin);
 
-  if (method === 'GET' && options.bustCache !== false) {
+  // Only add cache-busting timestamp for mutations or when explicitly requested
+  if ((method !== 'GET' || options.bustCache === true) && options.bustCache !== false) {
     endpointUrl.searchParams.set('_ts', String(Date.now()));
   }
 
   const config = {
-    cache: options.cache || 'no-store',
+    cache: options.cache || 'default',
     ...options,
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
@@ -91,7 +92,7 @@ async function apiClient(endpoint, options = {}) {
   };
 
   const response = await fetch(endpointUrl.toString(), config);
-  
+
   if (!response.ok) {
     const errorText = await response.text().catch(() => '');
     const parsed = parseApiErrorPayload(errorText, response.status);
@@ -128,16 +129,13 @@ async function apiClient(endpoint, options = {}) {
   return text ? JSON.parse(text) : null;
 }
 
-export const contentService = {
-  getFeatured: () => apiClient('/content/featured'),
-  getLatest: (limit = 10) => apiClient(`/content/latest?${new URLSearchParams({ limit })}`),
-  getPopular: (limit = 10) => apiClient(`/content/popular?${new URLSearchParams({ limit })}`),
-  browse: (params) => apiClient(`/content/browse?${new URLSearchParams(params)}`),
-  getHomepage: (limit = 30) => apiClient(`/content/homepage?${new URLSearchParams({ limit })}`, {
-    cache: 'default',
-    bustCache: false,
-  }),
-};
+export default apiClient;
+export { ApiError };
+
+function getAuthHeader() {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : '';
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export const moviesService = {
   getAll: (params) => apiClient(`/movies?${new URLSearchParams(params)}`),
@@ -151,19 +149,11 @@ export const seriesService = {
   getEpisodes: (id, seasonId) => apiClient(`/series/${id}/seasons/${seasonId}/episodes`),
 };
 
-export const searchService = {
-  search: (query) => apiClient(`/search?q=${encodeURIComponent(query)}`),
-};
-
-export const watchlistService = {
-  get: () => apiClient('/watchlist', { headers: getAuthHeader() }),
-  add: (contentType, contentId) => apiClient('/watchlist', {
-    method: 'POST',
-    body: JSON.stringify({ contentType, contentId }),
+export const playerService = {
+  getStream: (contentType, id, params = {}) => apiClient(`/player/${contentType}/${id}?${new URLSearchParams(params)}`, {
     headers: getAuthHeader(),
   }),
-  remove: (id) => apiClient(`/watchlist/${id}`, {
-    method: 'DELETE',
+  prepareStream: (contentType, id, params = {}) => apiClient(`/player/prepare/${contentType}/${id}?${new URLSearchParams(params)}`, {
     headers: getAuthHeader(),
   }),
 };
@@ -178,21 +168,12 @@ export const progressService = {
   getFor: (contentType, contentId) => apiClient(`/progress/${contentType}/${contentId}`, {
     headers: getAuthHeader(),
   }),
-};
-
-export const playerService = {
-  getStream: (contentType, id, params = {}) => apiClient(`/player/${contentType}/${id}?${new URLSearchParams(params)}`, {
+  markComplete: (contentType, contentId) => apiClient('/progress/complete', {
+    method: 'POST',
+    body: JSON.stringify({ contentType, contentId }),
     headers: getAuthHeader(),
   }),
-  prepareStream: (contentType, id, params = {}) => apiClient(`/player/prepare/${contentType}/${id}?${new URLSearchParams(params)}`, {
+  getContinueWatching: () => apiClient('/progress/continue-watching', {
     headers: getAuthHeader(),
   }),
 };
-
-function getAuthHeader() {
-  const token = localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-export default apiClient;
-export { ApiError };

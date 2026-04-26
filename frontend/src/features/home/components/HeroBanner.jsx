@@ -1,8 +1,24 @@
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useBreakpoint } from '../../../hooks';
+import StarRating from '../../../components/ui/StarRating';
+import WatchlistButton from '../../../components/ui/WatchlistButton';
 
 function HeroBanner({ content }) {
   const { isMobile, isTablet } = useBreakpoint();
+  const bgRef = useRef(null);
+
+  // Parallax scroll effect (desktop only)
+  useEffect(() => {
+    if (isMobile || isTablet) return;
+    function onScroll() {
+      if (!bgRef.current) return;
+      const y = window.scrollY;
+      bgRef.current.style.transform = `scale(1.04) translateY(${y * 0.28}px)`;
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [isMobile, isTablet]);
   const heroImage = content.backdrop || content.poster || '';
   const hasPoster = Boolean(content.poster);
   const isSeries = content.type === 'series';
@@ -10,7 +26,7 @@ function HeroBanner({ content }) {
   const heroChips = [content.genre, content.language, content.year].filter(Boolean).slice(0, 3);
   const insightItems = [
     { label: 'Format', value: isPlaceholder ? 'Spotlight' : isSeries ? 'Series' : 'Movie' },
-    { label: 'Rating', value: content.rating || 'N/A' },
+    { label: 'Rating', value: content.rating || 'N/A', isRating: true },
     { label: 'Language', value: content.language || 'Mixed' },
   ];
 
@@ -20,6 +36,7 @@ function HeroBanner({ content }) {
         <div style={styles.bgFallback} />
         {heroImage ? (
           <img
+            ref={bgRef}
             src={heroImage}
             alt={content.title}
             style={styles.bgImage}
@@ -55,8 +72,8 @@ function HeroBanner({ content }) {
             <span style={styles.year}>{content.year}</span>
           </div>
 
-          <h1 style={styles.title}>{content.title}</h1>
-          <p style={styles.description}>{content.description}</p>
+          <h1 style={{ ...styles.title, ...(isMobile ? styles.titleMobile : {}) }}>{content.title}</h1>
+          <p style={{ ...styles.description, ...(isMobile ? styles.descriptionMobile : {}) }}>{content.description}</p>
 
           <div style={styles.chipRow}>
             {heroChips.map((chip) => (
@@ -64,17 +81,21 @@ function HeroBanner({ content }) {
             ))}
           </div>
 
-          <div style={styles.metricRow}>
+          <div style={{ ...styles.metricRow, ...(isMobile ? styles.metricRowMobile : {}) }}>
             {insightItems.map((item) => (
-              <div key={item.label} style={styles.metricStat}>
+              <div key={item.label} style={{ ...styles.metricStat, ...(isMobile ? styles.metricStatMobile : {}) }}>
                 <span style={styles.metricLabel}>{item.label}</span>
-                <strong style={styles.metricValue}>{item.value}</strong>
+                {item.isRating && content.rating ? (
+                  <StarRating rating={content.rating} size="sm" showNumber />
+                ) : (
+                  <strong style={styles.metricValue}>{item.value}</strong>
+                )}
               </div>
             ))}
           </div>
 
-          <div style={styles.actions}>
-            <Link to={isPlaceholder ? '/browse?sort=latest' : `/watch/${content.id}`} style={styles.playBtn}>
+          <div style={{ ...styles.actions, ...(isMobile ? styles.actionsMobile : {}) }}>
+            <Link to={isPlaceholder ? '/browse?sort=latest' : `/watch/${content.id}`} style={{ ...styles.playBtn, ...(isMobile ? styles.playBtnMobile : {}) }}>
               {isPlaceholder ? (
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style={styles.buttonIcon} aria-hidden="true">
                   <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z" />
@@ -87,15 +108,23 @@ function HeroBanner({ content }) {
               <span>{isPlaceholder ? 'Browse Latest' : isSeries ? 'Play From Start' : 'Watch Now'}</span>
             </Link>
 
-            <Link to={isPlaceholder ? '/search' : isSeries ? `/series/${content.id}` : `/movies/${content.id}`} style={styles.infoBtn}>
+            <Link to={isPlaceholder ? '/search' : isSeries ? `/series/${content.id}` : `/movies/${content.id}`} style={{ ...styles.infoBtn, ...(isMobile ? styles.infoBtnMobile : {}) }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style={styles.buttonIcon} aria-hidden="true">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
               </svg>
               <span>{isPlaceholder ? 'Open Search' : 'View Details'}</span>
             </Link>
+
+            {!isPlaceholder && (
+              <WatchlistButton
+                contentType={isSeries ? 'series' : 'movie'}
+                contentId={content.id}
+                title={content.title}
+              />
+            )}
           </div>
         </div>
-        <div style={{ ...styles.sidePanel, ...(isMobile ? styles.sidePanelMobile : {}) }}>
+        {!isMobile && <div style={{ ...styles.sidePanel, ...(isTablet ? styles.sidePanelTablet : {}) }}>
           <div style={styles.sideCard}>
             <span style={styles.sideLabel}>Tonight's Mix</span>
             <h2 style={styles.sideTitle}>{isPlaceholder ? 'Catalog is warming up.' : 'Fast pick, premium feel.'}</h2>
@@ -136,7 +165,7 @@ function HeroBanner({ content }) {
               )}
             </div>
           </div>
-        </div>
+        </div>}
       </div>
     </section>
   );
@@ -150,12 +179,12 @@ const styles = {
     paddingTop: '84px',
   },
   heroTablet: {
-    minHeight: 'auto',
+    minHeight: '70vh',
     paddingTop: '76px',
   },
   heroMobile: {
-    minHeight: 'auto',
     paddingTop: '64px',
+    minHeight: 'min(100svh, 100dvh)',
   },
   background: {
     position: 'absolute',
@@ -285,12 +314,25 @@ const styles = {
     color: 'var(--text-primary)',
     textShadow: '0 6px 24px rgba(0, 0, 0, 0.28)',
   },
+  titleMobile: {
+    fontSize: 'clamp(2rem, 8vw, 2.8rem)',
+    marginBottom: 'var(--spacing-sm)',
+  },
   description: {
     maxWidth: '58ch',
     fontSize: '1.04rem',
     lineHeight: '1.8',
     marginBottom: 'var(--spacing-xl)',
     color: 'var(--text-secondary)',
+  },
+  descriptionMobile: {
+    fontSize: '0.92rem',
+    lineHeight: '1.6',
+    marginBottom: 'var(--spacing-md)',
+    display: '-webkit-box',
+    WebkitLineClamp: 3,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
   },
   chipRow: {
     display: 'flex',
@@ -315,12 +357,22 @@ const styles = {
     flexWrap: 'wrap',
     marginBottom: 'var(--spacing-xl)',
   },
+  metricRowMobile: {
+    gap: '8px',
+    marginBottom: 'var(--spacing-md)',
+  },
   metricStat: {
     minWidth: '130px',
     padding: '14px 16px',
     borderRadius: '20px',
     background: 'rgba(255,255,255,0.05)',
     border: '1px solid rgba(255,255,255,0.08)',
+  },
+  metricStatMobile: {
+    minWidth: '0',
+    flex: '1 1 calc(33% - 8px)',
+    padding: '10px 12px',
+    borderRadius: '14px',
   },
   metricLabel: {
     display: 'block',
@@ -341,6 +393,9 @@ const styles = {
     gap: 'var(--spacing-md)',
     flexWrap: 'wrap',
   },
+  actionsMobile: {
+    gap: '10px',
+  },
   playBtn: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -354,6 +409,12 @@ const styles = {
     fontWeight: '700',
     letterSpacing: '0.01em',
     boxShadow: '0 12px 30px rgba(255, 90, 95, 0.35)',
+  },
+  playBtnMobile: {
+    flex: 1,
+    minWidth: '0',
+    padding: '13px 18px',
+    fontSize: '0.92rem',
   },
   infoBtn: {
     display: 'inline-flex',
@@ -369,12 +430,21 @@ const styles = {
     border: '1px solid rgba(255, 255, 255, 0.14)',
     backdropFilter: 'blur(10px)',
   },
+  infoBtnMobile: {
+    flex: 1,
+    minWidth: '0',
+    padding: '13px 18px',
+    fontSize: '0.92rem',
+  },
   buttonIcon: {
     flexShrink: 0,
   },
   sidePanel: {
     display: 'grid',
     gap: '16px',
+  },
+  sidePanelTablet: {
+    gap: '12px',
   },
   sidePanelMobile: {
     gap: '10px',

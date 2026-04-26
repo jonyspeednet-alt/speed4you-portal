@@ -4,12 +4,18 @@ const https = require('https');
 
 const router = express.Router();
 
-const TV_PORTAL_BASE = 'http://10.45.45.254/';
-const ALLOWED_HOSTS = new Set([
-  '10.45.45.254',
-  '103.79.182.170',
-]);
-const ALLOWED_PORTS = new Set(['', '80', '8082']);
+const TV_PORTAL_BASE = process.env.TV_PORTAL_BASE_URL || 'http://10.45.45.254/';
+const ALLOWED_HOSTS = new Set(
+  String(process.env.TV_ALLOWED_HOSTS || '10.45.45.254,103.79.182.170')
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean),
+);
+const ALLOWED_PORTS = new Set(
+  String(process.env.TV_ALLOWED_PORTS || ',80,8082')
+    .split(',')
+    .map((p) => p.trim()),
+);
 const DEFAULT_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
 };

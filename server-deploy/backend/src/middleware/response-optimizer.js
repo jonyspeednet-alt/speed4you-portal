@@ -152,6 +152,12 @@ function setStaticCacheHeaders(res, filePath) {
   const normalizedPath = String(filePath || '').replace(/\\/g, '/');
   const isHtml = normalizedPath.endsWith('/index.html') || path.basename(normalizedPath) === 'index.html';
   const isHashedAsset = /\/assets\/.+-[A-Za-z0-9_-]{8,}\./.test(normalizedPath);
+  const basename = path.basename(normalizedPath);
+
+  if (basename === 'sw.js' || basename === 'manifest.json') {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    return;
+  }
 
   if (isHtml) {
     res.setHeader('Cache-Control', 'no-cache');
@@ -166,7 +172,20 @@ function setStaticCacheHeaders(res, filePath) {
   res.setHeader('Cache-Control', 'public, max-age=86400');
 }
 
+function setApiCacheHeaders(res, endpoint) {
+  if (endpoint.includes('/auth/')) {
+    res.setHeader('Cache-Control', 'private, no-store');
+  } else if (endpoint.includes('/content/homepage') || endpoint.includes('/content/featured')) {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+  } else if (endpoint.includes('/content')) {
+    res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=10');
+  }
+}
+
 module.exports = {
   compressionMiddleware,
   setStaticCacheHeaders,
+  setApiCacheHeaders,
 };

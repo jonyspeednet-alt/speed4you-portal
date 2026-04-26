@@ -34,30 +34,41 @@ async function getStatus() {
   };
 }
 
+let startLock = false;
+
 async function start() {
-  const current = await getStatus();
-  if (current.running) {
-    return { started: false, reason: 'already-running', status: current };
+  if (startLock) {
+    return { started: false, reason: 'start-in-progress', status: await getStatus() };
   }
 
-  const child = spawn(process.execPath, [scriptPath], {
-    detached: true,
-    stdio: 'ignore',
-    cwd: path.resolve(__dirname, '../..'),
-    env: process.env,
-  });
-  child.unref();
+  startLock = true;
+  try {
+    const current = await getStatus();
+    if (current.running) {
+      return { started: false, reason: 'already-running', status: current };
+    }
 
-  const state = await getMediaNormalizerState();
-  await saveMediaNormalizerState({
-    ...(state || {}),
-    lock: {
-      pid: child.pid,
-      startedAt: new Date().toISOString(),
-    },
-  });
+    const child = spawn(process.execPath, [scriptPath], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: path.resolve(__dirname, '../..'),
+      env: process.env,
+    });
+    child.unref();
 
-  return { started: true, status: await getStatus() };
+    const state = await getMediaNormalizerState();
+    await saveMediaNormalizerState({
+      ...(state || {}),
+      lock: {
+        pid: child.pid,
+        startedAt: new Date().toISOString(),
+      },
+    });
+
+    return { started: true, status: await getStatus() };
+  } finally {
+    startLock = false;
+  }
 }
 
 async function stop() {

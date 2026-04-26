@@ -3,27 +3,16 @@ import { Link } from 'react-router-dom';
 import HeroBanner from '../features/home/components/HeroBanner';
 import ContentRail from '../features/home/components/ContentRail';
 import { contentService, progressService } from '../services';
-import { useBreakpoint } from '../hooks';
+import { useBreakpoint, useRecentlyViewed } from '../hooks';
 
 const posterFallback = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400';
 const RAIL_SIZE = 8;
 const HOMEPAGE_POOL_LIMIT = 30;
 const HOMEPAGE_CACHE_KEY = 'portal-homepage-cache-v1';
+const HOMEPAGE_COMPACT_THRESHOLD = 4;
 
 const fallbackContent = {
-  featured: {
-    id: 'portal-featured-placeholder',
-    title: 'Fresh picks are loading',
-    description: 'New movies and series will appear here as soon as the latest published titles are available from the portal catalog.',
-    poster: '',
-    backdrop: '',
-    genre: 'Portal Spotlight',
-    year: 'Tonight',
-    type: 'movie',
-    language: 'Mixed',
-    rating: 'Updating',
-    isPlaceholder: true,
-  },
+  featured: null,
   continueWatching: [],
   trending: [],
   popular: [],
@@ -127,7 +116,7 @@ function pickFeatured(explicitFeatured, latestItems, popularItems, trendingItems
     return popularItems[0];
   }
 
-  return fallbackContent.featured;
+  return null;
 }
 
 function buildHomepageContent({ featured, latest, popular, trending, series, continueWatching }) {
@@ -234,15 +223,17 @@ function writeHomepageCache(value) {
 
 function HomePage() {
   const { isMobile, isTablet } = useBreakpoint();
-  const cachedHomepage = readHomepageCache();
-  const [content, setContent] = useState(cachedHomepage?.content || fallbackContent);
-  const [loading, setLoading] = useState(!cachedHomepage);
+  const { items: recentlyViewed } = useRecentlyViewed();
+  const [content, setContent] = useState(() => readHomepageCache()?.content || fallbackContent);
+  const [loading, setLoading] = useState(() => !readHomepageCache());
+  const [hoveredCard, setHoveredCard] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function fetchHomepageData() {
       try {
+        const cachedHomepage = readHomepageCache();
         if (!cachedHomepage) {
           setLoading(true);
         }
@@ -273,8 +264,7 @@ function HomePage() {
             generatedAt: homepageResponse?.generatedAt || new Date().toISOString(),
           });
         }
-      } catch (err) {
-        console.error('Failed to fetch homepage:', err);
+      } catch {
         if (!cancelled) {
           setContent(fallbackContent);
         }
@@ -290,7 +280,7 @@ function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [cachedHomepage]);
+  }, []);
 
   const spotlightCards = [
     {
@@ -310,52 +300,79 @@ function HomePage() {
     },
   ];
 
+  const mergedCatalogItems = mergePools(
+    content.latest,
+    content.trending,
+    content.popular,
+    content.movies,
+    content.series,
+    content.bengali,
+  );
+  const compactHomepage = mergedCatalogItems.length <= HOMEPAGE_COMPACT_THRESHOLD;
+  const hasDistinctMovieShelf = content.movies.some((item) => item.type !== 'series');
+  const showTrendingRail = !compactHomepage && content.trending.length >= 3;
+  const showPopularRail = !compactHomepage && content.popular.length >= 3;
+  const showLatestRail = content.latest.length >= 1;
+  const showMoviesRail = !compactHomepage && hasDistinctMovieShelf && content.movies.length >= 3;
+  const showSeriesRail = content.series.length >= 1;
+  const showBengaliRail = !compactHomepage && content.bengali.length >= 2;
+
   return (
     <div style={styles.page}>
-      <HeroBanner content={content.featured} />
+      {loading && !content.featured ? (
+        <div style={styles.heroSkeleton} aria-hidden="true">
+          <div style={styles.heroSkeletonShimmer} />
+        </div>
+      ) : content.featured ? (
+        <HeroBanner content={content.featured} />
+      ) : null}
 
       <div style={styles.content}>
         <section style={{ ...styles.commandDeck, ...(isMobile ? styles.commandDeckMobile : isTablet ? styles.commandDeckTablet : {}) }}>
           <div style={styles.commandIntro}>
-            <span style={styles.sectionEyebrow}>Portal Upgrade</span>
-            <h2 style={styles.commandTitle}>Faster choices. Cleaner shelves. More watchable discovery.</h2>
+            <span style={styles.sectionEyebrow}>Portal Overview</span>
+            <h2 style={styles.commandTitle}>Cleaner shelves and a steadier homepage rhythm.</h2>
             <p style={styles.commandText}>
-              Quick actions and compact shelves now surface the titles people actually want without wasting vertical space.
+              The top fold now focuses on real catalog movement so visitors can jump into movies, series, or unfinished titles without hunting around the page.
             </p>
-            <span style={styles.rotationNote}>Shelves refresh through the day so the homepage does not feel stuck on the same titles.</span>
+            <div style={styles.commandHighlights}>
+              <span style={styles.highlightPill}>{content.trending.length || 0} trending now</span>
+              <span style={styles.highlightPill}>{content.latest.length || 0} latest drops</span>
+              <span style={styles.highlightPill}>{content.series.length || 0} series ready</span>
+            </div>
+            <span style={styles.rotationNote}>Shelves rotate through the day, but the structure stays stable and easier to scan.</span>
           </div>
 
           <div style={{ ...styles.commandGrid, ...(isMobile ? styles.commandGridMobile : isTablet ? styles.commandGridTablet : {}) }}>
             {spotlightCards.map((card) => (
-              <Link key={card.label} to={card.action} style={styles.commandCard}>
+              <Link
+                key={card.label}
+                to={card.action}
+                style={{
+                  ...styles.commandCard,
+                  ...(hoveredCard === card.label ? styles.commandCardHover : {}),
+                }}
+                onMouseEnter={() => setHoveredCard(card.label)}
+                onMouseLeave={() => setHoveredCard(null)}
+              >
                 <span style={styles.commandLabel}>{card.label}</span>
                 <strong style={styles.commandValue}>{card.value}</strong>
-                <span style={styles.commandAction}>Open</span>
+                <span style={styles.commandAction}>Open →</span>
               </Link>
             ))}
           </div>
         </section>
 
-        <section style={{ ...styles.quickBrowse, ...(isMobile ? styles.quickBrowseMobile : isTablet ? styles.quickBrowseTablet : {}) }}>
-          <Link to="/browse?sort=trending" style={styles.quickBrowseCard}>
-            <span style={styles.quickBrowseLabel}>Trending</span>
-            <strong style={styles.quickBrowseValue}>{content.trending.length || 0} titles</strong>
-          </Link>
-          <Link to="/browse?sort=latest" style={styles.quickBrowseCard}>
-            <span style={styles.quickBrowseLabel}>Latest</span>
-            <strong style={styles.quickBrowseValue}>{content.latest.length || 0} fresh drops</strong>
-          </Link>
-          <Link to="/browse?language=Bengali" style={styles.quickBrowseCard}>
-            <span style={styles.quickBrowseLabel}>Bengali</span>
-            <strong style={styles.quickBrowseValue}>{content.bengali.length || 0} local picks</strong>
-          </Link>
-          <Link to="/browse" style={styles.quickBrowseCard}>
-            <span style={styles.quickBrowseLabel}>Search</span>
-            <strong style={styles.quickBrowseValue}>Use inline search and filters</strong>
-          </Link>
-        </section>
-
         {loading && <div style={styles.loadingNotice}>Refreshing the showcase…</div>}
+
+        {recentlyViewed.length > 0 && (
+          <ContentRail
+            title="Recently Viewed"
+            subtitle="Pick up where you left off"
+            items={recentlyViewed}
+            viewAllLink="/watchlist"
+          />
+        )}
 
         {content.continueWatching.length > 0 && (
           <ContentRail
@@ -367,48 +384,68 @@ function HomePage() {
           />
         )}
 
-        <ContentRail
-          title="Trending Right Now"
-          subtitle="Most watched this week"
-          items={content.trending}
-          type="popular"
-          viewAllLink="/browse?sort=trending"
-          priorityCount={4}
-        />
+        {compactHomepage ? (
+          <ContentRail
+            title="Fresh on the Portal"
+            subtitle="Current live catalog"
+            items={mergedCatalogItems}
+            viewAllLink="/browse?sort=latest"
+            priorityCount={4}
+          />
+        ) : null}
 
-        <ContentRail
-          title="Popular on ISP Portal"
-          subtitle="Crowd favorites"
-          items={content.popular}
-          type="popular"
-          viewAllLink="/browse?sort=popular"
-          priorityCount={3}
-        />
+        {showTrendingRail && (
+          <ContentRail
+            title="Trending Right Now"
+            subtitle="Most watched this week"
+            items={content.trending}
+            type="popular"
+            viewAllLink="/browse?sort=trending"
+            priorityCount={4}
+          />
+        )}
 
-        <ContentRail
-          title="Latest Releases"
-          subtitle="Just added"
-          items={content.latest}
-          viewAllLink="/browse?sort=latest"
-          priorityCount={4}
-        />
+        {showPopularRail && (
+          <ContentRail
+            title="Popular on ISP Portal"
+            subtitle="Crowd favorites"
+            items={content.popular}
+            type="popular"
+            viewAllLink="/browse?sort=popular"
+            priorityCount={3}
+          />
+        )}
 
-        <ContentRail
-          title="Movies"
-          subtitle="Lean-back movie night"
-          items={content.movies}
-          viewAllLink="/movies"
-        />
+        {showLatestRail && (
+          <ContentRail
+            title="Latest Releases"
+            subtitle="Just added"
+            items={content.latest}
+            viewAllLink="/browse?sort=latest"
+            priorityCount={4}
+          />
+        )}
 
-        <ContentRail
-          title="Series"
-          subtitle="Binge-ready chapters"
-          items={content.series}
-          type="series"
-          viewAllLink="/series"
-        />
+        {showMoviesRail && (
+          <ContentRail
+            title="Movies"
+            subtitle="Lean-back movie night"
+            items={content.movies}
+            viewAllLink="/movies"
+          />
+        )}
 
-        {content.bengali.length > 0 && (
+        {showSeriesRail && (
+          <ContentRail
+            title="Series"
+            subtitle="Binge-ready chapters"
+            items={content.series}
+            type="series"
+            viewAllLink="/series"
+          />
+        )}
+
+        {showBengaliRail && (
           <ContentRail
             title="Bengali Picks"
             subtitle="Local language highlights"
@@ -426,6 +463,19 @@ const styles = {
     minHeight: '100vh',
     background: 'transparent',
   },
+  heroSkeleton: {
+    position: 'relative',
+    minHeight: '88vh',
+    overflow: 'hidden',
+    background: 'linear-gradient(135deg, #08111d 0%, #12233a 50%, #0a1322 100%)',
+  },
+  heroSkeletonShimmer: {
+    position: 'absolute',
+    inset: 0,
+    background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.03) 75%)',
+    backgroundSize: '200% 100%',
+    animation: 'shimmer 1.8s infinite',
+  },
   content: {
     position: 'relative',
     zIndex: 1,
@@ -433,7 +483,7 @@ const styles = {
   },
   commandDeck: {
     maxWidth: '1400px',
-    margin: '-38px auto 18px auto',
+    margin: '-20px auto 20px auto',
     padding: '0 var(--spacing-lg)',
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 1.25fr) minmax(0, 0.95fr)',
@@ -444,7 +494,7 @@ const styles = {
     gridTemplateColumns: '1fr',
   },
   commandDeckMobile: {
-    margin: '-18px auto 14px auto',
+    margin: '8px auto 14px auto',
     padding: '0 var(--spacing-md)',
     gridTemplateColumns: '1fr',
   },
@@ -475,6 +525,21 @@ const styles = {
     lineHeight: '1.65',
     fontSize: '0.98rem',
   },
+  commandHighlights: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+    marginTop: '2px',
+  },
+  highlightPill: {
+    padding: '8px 12px',
+    borderRadius: '999px',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    color: 'var(--text-primary)',
+    fontSize: '0.78rem',
+    fontWeight: '700',
+  },
   rotationNote: {
     display: 'inline-block',
     marginTop: '12px',
@@ -493,7 +558,7 @@ const styles = {
     gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
   },
   commandGridMobile: {
-    gridTemplateColumns: '1fr',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
   },
   commandCard: {
     minHeight: '100%',
@@ -505,6 +570,13 @@ const styles = {
     display: 'grid',
     gap: '8px',
     alignContent: 'space-between',
+    transition: 'background 180ms ease, border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease',
+  },
+  commandCardHover: {
+    background: 'rgba(255,255,255,0.09)',
+    borderColor: 'rgba(255,255,255,0.14)',
+    transform: 'translateY(-2px)',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.28)',
   },
   commandLabel: {
     display: 'block',
@@ -524,41 +596,6 @@ const styles = {
     color: 'var(--accent-amber)',
     fontWeight: '700',
     fontSize: '0.76rem',
-  },
-  quickBrowse: {
-    maxWidth: '1400px',
-    margin: '0 auto 4px auto',
-    padding: '0 var(--spacing-lg)',
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-    gap: '10px',
-  },
-  quickBrowseTablet: {
-    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-  },
-  quickBrowseMobile: {
-    padding: '0 var(--spacing-md)',
-    gridTemplateColumns: '1fr',
-  },
-  quickBrowseCard: {
-    padding: '14px 16px',
-    borderRadius: '20px',
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    display: 'grid',
-    gap: '6px',
-  },
-  quickBrowseLabel: {
-    color: 'var(--text-muted)',
-    fontSize: '0.72rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.14em',
-    fontWeight: '700',
-  },
-  quickBrowseValue: {
-    color: 'var(--text-primary)',
-    fontSize: '0.92rem',
-    lineHeight: '1.35',
   },
   loadingNotice: {
     maxWidth: '1400px',

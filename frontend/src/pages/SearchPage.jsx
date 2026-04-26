@@ -1,7 +1,8 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import searchService from '../services/searchService';
-import { useBreakpoint } from '../hooks';
+import { useBreakpoint, useRecentlyViewed } from '../hooks';
+import WatchlistButton from '../components/ui/WatchlistButton';
 
 const posterFallback = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400';
 const languageOptions = ['All', 'English', 'Hindi', 'Bengali', 'Korean', 'Japanese'];
@@ -28,7 +29,29 @@ function SearchPage() {
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isListening, setIsListening] = useState(false);
   const deferredQuery = useDeferredValue(query);
+
+  function startVoiceSearch() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    setIsListening(true);
+    recognition.start();
+    recognition.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      setQuery(transcript);
+      setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+  }
+
+  const hasVoiceSupport = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const { items: recentlyViewed } = useRecentlyViewed();
 
   useEffect(() => {
     const nextParams = {};
@@ -81,10 +104,11 @@ function SearchPage() {
     };
   }, [deferredQuery, selectedLanguage, selectedType]);
 
-  const verifiedCount = useMemo(
-    () => results.filter((item) => item.metadataStatus === 'matched').length,
-    [results],
-  );
+  function resetSearch() {
+    setQuery('');
+    setSelectedType('all');
+    setSelectedLanguage('All');
+  }
 
   return (
     <div style={{ ...styles.page, ...(isMobile ? styles.pageMobile : {}) }}>
@@ -111,8 +135,24 @@ function SearchPage() {
               style={styles.input}
               autoFocus
             />
+            {hasVoiceSupport && (
+              <button
+                type="button"
+                onClick={startVoiceSearch}
+                style={{
+                  ...styles.voiceBtn,
+                  ...(isListening ? styles.voiceBtnActive : {}),
+                }}
+                aria-label={isListening ? 'Listening...' : 'Search by voice'}
+                title="Voice search"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </button>
+            )}
             {query && (
-              <button onClick={() => setQuery('')} style={styles.clearBtn}>
+              <button onClick={resetSearch} style={styles.clearBtn}>
                 Clear
               </button>
             )}
@@ -137,25 +177,59 @@ function SearchPage() {
               <span style={styles.statLabel}>Matches</span>
               <strong style={styles.statValue}>{loading ? '...' : results.length}</strong>
             </div>
-            <div style={styles.statCard}>
-              <span style={styles.statLabel}>Verified</span>
-              <strong style={styles.statValue}>{loading ? '...' : verifiedCount}</strong>
-            </div>
           </div>
         </div>
       </section>
 
       <div style={styles.results}>
         {!query.trim() && (
-          <div style={styles.hint}>
-            <h3 style={styles.hintTitle}>Modern search is now built in</h3>
-            <div style={styles.tipGrid}>
-              <div style={styles.tipCard}>Search by title, genre, category, year, or language</div>
-              <div style={styles.tipCard}>Results are ranked by relevance plus trend score</div>
-              <div style={styles.tipCard}>Filter movies vs series instantly</div>
-              <div style={styles.tipCard}>Suggestions help you jump to the closest catalog match</div>
+          <>
+            {recentlyViewed.length > 0 && (
+              <div style={styles.recentSection}>
+                <div style={styles.recentHeader}>
+                  <span style={styles.suggestionLabel}>Recently Viewed</span>
+                </div>
+                <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : {}) }}>
+                  {recentlyViewed.slice(0, isMobile ? 4 : 6).map((item, index) => (
+                    <div key={item.id} style={styles.cardWrap}>
+                      <Link
+                        to={item.type === 'series' ? `/series/${item.id}` : `/movies/${item.id}`}
+                        style={styles.card}
+                      >
+                        <div style={styles.posterWrapper}>
+                          {item.poster
+                            ? <img src={item.poster} alt={item.title} style={styles.poster} loading="lazy" />
+                            : <div style={styles.posterFallback}><span>{item.title}</span></div>
+                          }
+                          <div style={styles.overlay} />
+                          <span style={styles.rank}>{String(index + 1).padStart(2, '0')}</span>
+                          <span style={styles.badge}>{item.type === 'series' ? 'Series' : 'Movie'}</span>
+                          <div style={styles.cardWatchlistBtn}>
+                            <WatchlistButton contentType={item.type} contentId={item.id} title={item.title} compact />
+                          </div>
+                        </div>
+                        <div style={styles.info}>
+                          <div style={styles.infoTop}>
+                            <h3 style={styles.cardTitle}>{item.title}</h3>
+                          </div>
+                          <span style={styles.cardMeta}>{`${item.genre || ''} • ${item.year || ''}`}</span>
+                        </div>
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={styles.hint}>
+              <h3 style={styles.hintTitle}>Modern search is now built in</h3>
+              <div style={styles.tipGrid}>
+                <div style={styles.tipCard}>Search by title, genre, category, year, or language</div>
+                <div style={styles.tipCard}>Results are ranked by relevance plus trend score</div>
+                <div style={styles.tipCard}>Filter movies vs series instantly</div>
+                <div style={styles.tipCard}>Suggestions help you jump to the closest catalog match</div>
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {!!query.trim() && suggestions.length > 0 && (
@@ -185,26 +259,34 @@ function SearchPage() {
             <p style={styles.resultCount}>{results.length} ranked matches found</p>
             <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : {}) }}>
               {results.map((item, index) => (
-                <Link
-                  key={item.id}
-                  to={item.type === 'series' ? `/series/${item.id}` : `/movies/${item.id}`}
-                  style={styles.card}
-                >
-                  <div style={styles.posterWrapper}>
-                    <img src={item.poster} alt={item.title} style={styles.poster} loading="lazy" />
-                    <div style={styles.overlay} />
-                    <span style={styles.rank}>{String(index + 1).padStart(2, '0')}</span>
-                    <span style={styles.badge}>{item.type === 'series' ? 'Series' : 'Movie'}</span>
-                  </div>
-                  <div style={styles.info}>
-                    <div style={styles.infoTop}>
-                      <h3 style={styles.cardTitle}>{item.title}</h3>
-                      {item.metadataStatus === 'needs_review' && <span style={styles.reviewBadge}>Review</span>}
+                <div key={item.id} style={styles.cardWrap}>
+                  <Link
+                    to={item.type === 'series' ? `/series/${item.id}` : `/movies/${item.id}`}
+                    style={styles.card}
+                  >
+                    <div style={styles.posterWrapper}>
+                      <img src={item.poster} alt={item.title} style={styles.poster} loading="lazy" />
+                      <div style={styles.overlay} />
+                      <span style={styles.rank}>{String(index + 1).padStart(2, '0')}</span>
+                      <span style={styles.badge}>{item.type === 'series' ? 'Series' : 'Movie'}</span>
+                      <div style={styles.cardWatchlistBtn}>
+                        <WatchlistButton
+                          contentType={item.type === 'series' ? 'series' : 'movie'}
+                          contentId={item.id}
+                          title={item.title}
+                          compact
+                        />
+                      </div>
                     </div>
-                    <span style={styles.cardMeta}>{`${item.genre} • ${item.year}`}</span>
-                    <span style={styles.languageMeta}>{`${item.language} • ★ ${item.rating}`}</span>
-                  </div>
-                </Link>
+                    <div style={styles.info}>
+                      <div style={styles.infoTop}>
+                        <h3 style={styles.cardTitle}>{item.title}</h3>
+                      </div>
+                      <span style={styles.cardMeta}>{`${item.genre} • ${item.year}`}</span>
+                      <span style={styles.languageMeta}>{`${item.language} • ★ ${item.rating}`}</span>
+                    </div>
+                  </Link>
+                </div>
               ))}
             </div>
           </>
@@ -256,11 +338,13 @@ const styles = {
     border: '1px solid rgba(255,255,255,0.08)',
   },
   searchIcon: { position: 'absolute', left: '24px', color: 'var(--text-muted)' },
-  input: { width: '100%', padding: '18px 120px 18px 54px', background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '1.05rem', outline: 'none' },
+  input: { width: '100%', padding: '18px 160px 18px 54px', background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '1.05rem', outline: 'none' },
   clearBtn: { position: 'absolute', right: '12px', padding: '12px 18px', borderRadius: '999px', background: 'linear-gradient(135deg, var(--accent-red), #ff8a54)', color: '#fff', fontWeight: '700' },
+  voiceBtn: { position: 'absolute', right: '100px', width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 150ms ease, color 150ms ease' },
+  voiceBtnActive: { background: 'rgba(239,68,68,0.2)', borderColor: 'rgba(239,68,68,0.4)', color: '#f87171', animation: 'glowPulse 1s ease-in-out infinite' },
   filterRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
   select: { padding: '14px 16px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', cursor: 'pointer', fontSize: '0.92rem' },
-  statsRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
+  statsRow: { display: 'grid', gridTemplateColumns: '1fr', gap: '12px' },
   twoColMobile: { gridTemplateColumns: '1fr' },
   statCard: { padding: '16px', borderRadius: '20px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' },
   statLabel: { display: 'block', marginBottom: '8px', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--text-muted)', fontWeight: '700' },
@@ -278,15 +362,16 @@ const styles = {
   resultCount: { marginBottom: 'var(--spacing-lg)', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.14em', fontSize: '0.72rem', fontWeight: '700' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '22px' },
   gridMobile: { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' },
+  cardWrap: { position: 'relative' },
   card: { textDecoration: 'none', display: 'grid', gap: '12px' },
   posterWrapper: { position: 'relative', borderRadius: '24px', overflow: 'hidden', aspectRatio: '3/4', background: 'var(--bg-tertiary)', boxShadow: 'var(--shadow-card)' },
+  cardWatchlistBtn: { position: 'absolute', bottom: '10px', right: '10px', zIndex: 2 },
   poster: { width: '100%', height: '100%', objectFit: 'cover' },
   overlay: { position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06) 10%, rgba(7,17,31,0.82) 100%)' },
   rank: { position: 'absolute', top: '14px', left: '14px', width: '42px', height: '42px', borderRadius: '50%', background: 'rgba(7,17,31,0.76)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '0.76rem' },
   badge: { position: 'absolute', right: '14px', bottom: '14px', background: 'rgba(255,255,255,0.12)', color: 'var(--text-primary)', padding: '7px 10px', borderRadius: '999px', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: '700' },
   info: { padding: '12px 4px 0', display: 'grid', gap: '8px' },
   infoTop: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' },
-  reviewBadge: { padding: '6px 8px', borderRadius: '999px', background: 'rgba(255,200,87,0.16)', color: 'var(--accent-amber)', fontSize: '0.68rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.1em' },
   cardTitle: { fontSize: '1.12rem', color: 'var(--text-primary)' },
   cardMeta: { fontSize: '0.84rem', color: 'var(--text-muted)' },
   languageMeta: { fontSize: '0.8rem', color: 'var(--accent-cyan)' },

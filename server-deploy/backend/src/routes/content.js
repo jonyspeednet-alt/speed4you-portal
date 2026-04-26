@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { listItems, searchItems } = require('../data/store');
+const { setApiCacheHeaders } = require('../middleware/response-optimizer');
 const HOMEPAGE_LIMIT = 30;
 
 function asyncRoute(handler) {
@@ -97,6 +98,7 @@ async function buildHomepagePayload(limit = HOMEPAGE_LIMIT) {
 router.get('/featured', asyncRoute(async (req, res) => {
   const items = await getPublishedItems({ featured: true }, 0, 1);
   const featured = items[0] || (await getPublishedItems({}, 0, 1))[0] || null;
+  setApiCacheHeaders(res, req.originalUrl);
   res.json(featured);
 }));
 
@@ -104,10 +106,11 @@ router.get('/', asyncRoute(async (req, res) => {
   const page = normalizePositiveInt(req.query.page, 1, { min: 1, max: 100000 });
   const limit = normalizePositiveInt(req.query.limit, 24, { min: 1, max: 100 });
   const sort = normalizeQueryValue(req.query.sort) || 'latest';
-  
+
   const { items, total } = await listItems({ status: 'published' }, (page - 1) * limit, limit, sort);
   const featured = items.find(i => i.featured) || items[0] || null;
 
+  setApiCacheHeaders(res, req.originalUrl);
   res.json({
     items,
     featured,
@@ -121,6 +124,7 @@ router.get('/', asyncRoute(async (req, res) => {
 router.get('/latest', asyncRoute(async (req, res) => {
   const limit = normalizePositiveInt(req.query.limit, 10, { min: 1, max: 100 });
   const items = await getPublishedItems({}, 0, limit, 'latest');
+  setApiCacheHeaders(res, req.originalUrl);
   res.json({ items });
 }));
 
@@ -138,7 +142,7 @@ router.get('/trending', asyncRoute(async (req, res) => {
 
 router.get('/homepage', asyncRoute(async (req, res) => {
   const limit = normalizePositiveInt(req.query.limit, HOMEPAGE_LIMIT, { min: 1, max: 100 });
-  res.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=120');
+  setApiCacheHeaders(res, req.originalUrl);
   res.json(await buildHomepagePayload(limit));
 }));
 
@@ -153,7 +157,7 @@ router.get('/browse', asyncRoute(async (req, res) => {
   const sort = normalizeQueryValue(req.query.sort) || 'latest';
   const page = normalizePositiveInt(req.query.page, 1, { min: 1, max: 100000 });
   const limit = normalizePositiveInt(req.query.limit, 20, { min: 1, max: 100 });
-  
+
   const baseFilters = { status: 'published' };
   if (type) baseFilters.type = type;
   if (genre) baseFilters.genre = genre;
@@ -178,6 +182,8 @@ router.get('/browse', asyncRoute(async (req, res) => {
     page,
     limit,
     query: q,
+    nextPage: offset + items.length < total ? page + 1 : null,
+    hasMore: offset + items.length < total,
   });
 }));
 

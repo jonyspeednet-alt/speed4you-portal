@@ -144,6 +144,12 @@ function decodePublicPath(value) {
   return decodeURIComponent(String(value || '').split('?')[0]);
 }
 
+function isPathSafe(resolvedPath, allowedRoot) {
+  const normalizedResolved = path.resolve(resolvedPath);
+  const normalizedRoot = path.resolve(allowedRoot);
+  return normalizedResolved.startsWith(normalizedRoot + path.sep) || normalizedResolved === normalizedRoot;
+}
+
 function resolveFilePathFromVideoUrl(videoUrl) {
   const decodedVideoUrl = decodePublicPath(videoUrl);
   if (!decodedVideoUrl) {
@@ -164,10 +170,16 @@ function resolveFilePathFromVideoUrl(videoUrl) {
     return '';
   }
 
-  const absolutePath = path.join(
-    matchingRoot.scanPath,
-    ...relativePath.split('/').filter(Boolean).map((segment) => decodeURIComponent(segment)),
-  );
+  const segments = relativePath.split('/').filter(Boolean).map((segment) => decodeURIComponent(segment));
+  if (segments.some((seg) => seg === '..' || seg === '.')) {
+    return '';
+  }
+
+  const absolutePath = path.join(matchingRoot.scanPath, ...segments);
+
+  if (!isPathSafe(absolutePath, matchingRoot.scanPath)) {
+    return '';
+  }
 
   return fs.existsSync(absolutePath) ? absolutePath : '';
 }
@@ -521,6 +533,33 @@ function pickStreamingStrategy(probeData, extension) {
   };
 }
 
+async function determineStreamingStrategy(resolvedPath, extension) {
+  if (!resolvedPath) {
+    return {
+      mode: 'transcode',
+      videoCodec: '',
+      audioCodec: '',
+      reason: 'missing source path',
+      universalTarget: UNIVERSAL_TARGET,
+      profile: null,
+    };
+  }
+
+  try {
+    return pickStreamingStrategy(await probeMedia(resolvedPath), extension);
+  } catch (error) {
+    console.error(error);
+    return {
+      mode: 'transcode',
+      videoCodec: '',
+      audioCodec: '',
+      reason: 'probe failed, using universal fallback',
+      universalTarget: UNIVERSAL_TARGET,
+      profile: null,
+    };
+  }
+}
+
 function getFfmpegFileArgs(resolvedPath, outputPath, strategyMode) {
   const common = [
     '-y',
@@ -701,18 +740,10 @@ router.get('/stream/:contentType/:id', async (req, res) => {
   }
 
   try {
-    if (DIRECT_PLAY_EXTENSIONS.has(ext)) {
-      streamFileDirect(resolvedPath, req, res);
-      return;
-    }
+    const strategy = await determineStreamingStrategy(resolvedPath, ext);
 
-    let strategy;
-    try {
-      const probeData = await probeMedia(resolvedPath);
-      strategy = pickStreamingStrategy(probeData, ext);
-    } catch (probeError) {
-      console.error(probeError);
-      transcodeToMp4(resolvedPath, res);
+    if (strategy.mode === 'direct') {
+      streamFileDirect(resolvedPath, req, res);
       return;
     }
 
@@ -741,7 +772,9 @@ router.get('/stream/:contentType/:id', async (req, res) => {
     transcodeToMp4(resolvedPath, res);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Unable to prepare the video stream' });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Unable to prepare the video stream' });
+    }
   }
 });
 
@@ -755,17 +788,11 @@ router.get('/:contentType/:id', async (req, res) => {
   const { videoUrl, sourcePath } = selection;
   const resolvedPath = resolvePlayableFilePath(sourcePath, videoUrl);
   const ext = getSourceExtension(resolvedPath, videoUrl);
-  let strategy = { mode: DIRECT_PLAY_EXTENSIONS.has(ext) ? 'direct' : 'transcode' };
+  const strategy = resolvedPath
+    ? await determineStreamingStrategy(resolvedPath, ext)
+    : { mode: 'transcode' };
 
-  if (resolvedPath && !DIRECT_PLAY_EXTENSIONS.has(ext)) {
-    try {
-      strategy = pickStreamingStrategy(await probeMedia(resolvedPath), ext);
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
-  const cachePath = resolvedPath && !DIRECT_PLAY_EXTENSIONS.has(ext)
+  const cachePath = resolvedPath && strategy.mode !== 'direct'
     ? buildCacheOutputPath(selection)
     : '';
   const optimizedReady = cachePath
@@ -812,16 +839,10 @@ router.get('/prepare/:contentType/:id', async (req, res) => {
     return res.status(404).json({ error: 'Source file is not available on the server' });
   }
 
-  if (DIRECT_PLAY_EXTENSIONS.has(ext)) {
-    return res.json({ ready: true, strategy: 'direct' });
-  }
+  const strategy = await determineStreamingStrategy(resolvedPath, ext);
 
-  let strategy;
-  try {
-    strategy = pickStreamingStrategy(await probeMedia(resolvedPath), ext);
-  } catch (error) {
-    console.error(error);
-    return res.json({ ready: false, strategy: 'transcode' });
+  if (strategy.mode === 'direct') {
+    return res.json({ ready: true, strategy: 'direct' });
   }
 
   const cachePath = buildCacheOutputPath(selection);
@@ -838,3 +859,8 @@ router.get('/prepare/:contentType/:id', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.__test__ = {
+  collectPlaybackProfile,
+  pickStreamingStrategy,
+  determineStreamingStrategy,
+};

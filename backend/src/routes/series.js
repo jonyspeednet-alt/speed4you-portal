@@ -37,39 +37,51 @@ router.get('/', validateQuery(seriesQuerySchema), async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
-  const show = await getItemById(req.params.id);
-  if (!show || show.type !== 'series') {
-    return res.status(404).json({ error: 'Series not found' });
+router.get('/:id', async (req, res, next) => {
+  try {
+    const show = await getItemById(req.params.id);
+    if (!show || show.type !== 'series') {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+    res.json(show);
+  } catch (error) {
+    next(error);
   }
-  res.json(show);
 });
 
-router.get('/:id/seasons', async (req, res) => {
-  const show = await getItemById(req.params.id);
-  if (!show || show.type !== 'series') {
-    return res.status(404).json({ error: 'Series not found' });
+router.get('/:id/seasons', async (req, res, next) => {
+  try {
+    const show = await getItemById(req.params.id);
+    if (!show || show.type !== 'series') {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+    res.json({
+      seasons: (show.seasons || []).map((season) => ({
+        id: season.id,
+        number: season.number,
+        title: season.title,
+        episodes: season.episodes?.length || 0,
+      })),
+    });
+  } catch (error) {
+    next(error);
   }
-  res.json({
-    seasons: (show.seasons || []).map((season) => ({
-      id: season.id,
-      number: season.number,
-      title: season.title,
-      episodes: season.episodes?.length || 0,
-    })),
-  });
 });
 
-router.get('/:id/seasons/:seasonId/episodes', async (req, res) => {
-  const show = await getItemById(req.params.id);
-  if (!show || show.type !== 'series') {
-    return res.status(404).json({ error: 'Series not found' });
+router.get('/:id/seasons/:seasonId/episodes', async (req, res, next) => {
+  try {
+    const show = await getItemById(req.params.id);
+    if (!show || show.type !== 'series') {
+      return res.status(404).json({ error: 'Series not found' });
+    }
+    const season = (show.seasons || []).find((item) => String(item.id) === req.params.seasonId || String(item.number) === req.params.seasonId);
+    if (!season) {
+      return res.status(404).json({ error: 'Season not found' });
+    }
+    res.json({ episodes: season.episodes || [] });
+  } catch (error) {
+    next(error);
   }
-  const season = (show.seasons || []).find((item) => String(item.id) === req.params.seasonId || String(item.number) === req.params.seasonId);
-  if (!season) {
-    return res.status(404).json({ error: 'Season not found' });
-  }
-  res.json({ episodes: season.episodes || [] });
 });
 
 module.exports = router;

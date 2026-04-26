@@ -1,9 +1,10 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { contentService, searchService } from '../services';
 import { useBreakpoint } from '../hooks';
 import { CardSkeleton } from '../components/feedback/Skeleton';
+import WatchlistButton from '../components/ui/WatchlistButton';
 
 const QUICK_GENRES = ['All', 'Action', 'Drama', 'Comedy', 'Horror', 'Romance', 'Thriller', 'Crime'];
 const QUICK_LANGUAGES = ['All', 'English', 'Bengali', 'Hindi', 'Korean', 'Japanese'];
@@ -33,6 +34,65 @@ function normalizeQuery(value, fallback = 'All') {
   return value;
 }
 
+function BrowseCard({ item, index, isMobile }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      style={styles.cardWrap}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <Link
+        to={item.type === 'series' ? `/series/${item.id}` : `/movies/${item.id}`}
+        style={styles.card}
+      >
+        <div style={{
+          ...styles.posterWrapper,
+          transform: hovered && !isMobile ? 'scale(1.02)' : 'scale(1)',
+          boxShadow: hovered && !isMobile
+            ? '0 24px 48px rgba(0,0,0,0.5), 0 0 28px rgba(255,90,95,0.18)'
+            : 'var(--shadow-card)',
+          transition: 'transform 280ms ease, box-shadow 280ms ease',
+        }}>
+          <img src={item.poster} alt={item.title} style={styles.poster} loading="lazy" />
+          <div style={styles.overlay} />
+          <div style={styles.rankBadge}>{String(index + 1).padStart(2, '0')}</div>
+          <div style={styles.meta}>
+            <span style={styles.rating}>★ {item.rating}</span>
+            <span style={styles.badge}>{item.type === 'series' ? 'Series' : 'Movie'}</span>
+          </div>
+          {hovered && !isMobile && (
+            <div style={styles.hoverPlay}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          )}
+          <div style={styles.cardWatchlistBtn}>
+            <WatchlistButton
+              contentType={item.type === 'series' ? 'series' : 'movie'}
+              contentId={item.id}
+              title={item.title}
+              compact
+            />
+          </div>
+        </div>
+        <div style={styles.info}>
+          <div style={styles.infoTop}>
+            <h3 style={styles.cardTitle}>{item.title}</h3>
+            {item.metadataStatus === 'needs_review' ? (
+              <span style={styles.reviewBadge}>Review</span>
+            ) : null}
+          </div>
+          <span style={styles.cardMeta}>{`${item.genre} | ${item.year}`}</span>
+          <span style={styles.languageMeta}>{`${item.language}${item.runtime ? ` | ${item.runtime} min` : ''}`}</span>
+          {item.collection ? <span style={styles.collectionMeta}>{item.collection}</span> : null}
+        </div>
+      </Link>
+    </div>
+  );
+}
+
 function BrowsePage({ type }) {
   const { isMobile, isTablet } = useBreakpoint();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -42,9 +102,26 @@ function BrowsePage({ type }) {
   const [selectedCollection, setSelectedCollection] = useState(() => normalizeQuery(searchParams.get('collection')));
   const [searchText, setSearchText] = useState(() => searchParams.get('q') || '');
   const [page, setPage] = useState(() => Number(searchParams.get('page') || 1));
-// Removed duplicate content state - useInfiniteQuery handles
-  const [suggestions, setSuggestions] = useState([]);  
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const loadMoreRef = useRef(null);
+  const [suggestions, setSuggestions] = useState([]);
   const deferredSearchText = useDeferredValue(searchText);
+
+  // Reset filters when type prop changes (e.g. /movies → /series)
+  const prevTypeRef = useRef(type);
+  useEffect(() => {
+    if (prevTypeRef.current === type) return;
+    prevTypeRef.current = type;
+    // Batch all resets — intentional setState calls in response to prop change
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setSelectedGenre('All');
+    setSelectedLanguage('All');
+    setSortBy('latest');
+    setSelectedCollection('All');
+    setSearchText('');
+    setPage(1);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [type]);
 
   useEffect(() => {
     const nextParams = {};
@@ -80,13 +157,10 @@ function BrowsePage({ type }) {
     refetch,
   } = useInfiniteQuery({
     queryKey: ['browse', params],
-    queryFn: ({ pageParam = 1 }) => contentService.browse({ ...params, page: pageParam }),
+    queryFn: ({ pageParam = 1 }) => contentService.fetchBrowsePage({ pageParam, ...params }),
     initialPageParam: 1,
-    getNextPageParam: (lastPage, allPages) => {
-      const nextPage = allPages.length + 1;
-      return lastPage.total >= nextPage * PAGE_SIZE ? nextPage : undefined;
-    },
-    staleTime: 30 * 1000, // Reduced staleTime for more "instant" updates but not too frequent
+    getNextPageParam: (lastPage) => lastPage.nextPage,
+    staleTime: 30 * 1000,
     gcTime: 10 * 60 * 1000,
   });
 
@@ -158,6 +232,18 @@ function BrowsePage({ type }) {
   const hasMore = hasNextPage;
   const highRatedCount = filteredContent.filter((item) => Number(item.rating) >= 8).length;
   const reviewNeededCount = filteredContent.filter((item) => item.metadataStatus === 'needs_review').length;
+
+  // Infinite scroll via IntersectionObserver
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el || !hasNextPage || isFetchingNextPage) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) fetchNextPage(); },
+      { rootMargin: '200px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
   const newestYear = filteredContent.reduce((maxYear, item) => Math.max(maxYear, Number(item.year) || 0), 0);
   const hasActiveQuery = deferredSearchText.trim().length > 0;
 
@@ -252,76 +338,105 @@ function BrowsePage({ type }) {
         </div>
 
         <div style={{ ...styles.commandPanel, ...(isMobile ? styles.commandPanelMobile : {}) }}>
-          <div style={styles.filterGrid}>
-            <label style={styles.filterField}>
-              <span style={styles.filterLabel}>Genre</span>
-              <select
-                value={selectedGenre}
-                onChange={(event) => {
-                  setSelectedGenre(event.target.value);
-                  setPage(1);
-                }}
-                style={styles.select}
+          {/* Mobile: collapsible toggle */}
+          {isMobile && (
+            <button
+              style={styles.filterToggleBtn}
+              onClick={() => setFiltersOpen((o) => !o)}
+              aria-expanded={filtersOpen}
+              aria-controls="filter-panel"
+            >
+              <span>
+                {activeFilterCount > 0 ? `Filters (${activeFilterCount} active)` : 'Filters'}
+              </span>
+              <svg
+                viewBox="0 0 24 24" width="18" height="18" fill="currentColor"
+                style={{ transform: filtersOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 200ms ease' }}
+                aria-hidden="true"
               >
-                {genreOptions.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
-              </select>
-            </label>
-
-            <label style={styles.filterField}>
-              <span style={styles.filterLabel}>Language</span>
-              <select
-                value={selectedLanguage}
-                onChange={(event) => {
-                  setSelectedLanguage(event.target.value);
-                  setPage(1);
-                }}
-                style={styles.select}
-              >
-                {languageOptions.map((language) => <option key={language} value={language}>{language}</option>)}
-              </select>
-            </label>
-
-            <label style={styles.filterField}>
-              <span style={styles.filterLabel}>Sort</span>
-              <select
-                value={sortBy}
-                onChange={(event) => {
-                  setSortBy(event.target.value);
-                  setPage(1);
-                }}
-                style={styles.select}
-              >
-                <option value="latest">Latest</option>
-                <option value="popular">Popular</option>
-                <option value="trending">Trending</option>
-                <option value="rating">Top Rated</option>
-                <option value="featured">Featured Order</option>
-              </select>
-            </label>
-
-            <label style={styles.filterField}>
-              <span style={styles.filterLabel}>Collection</span>
-              <select
-                value={selectedCollection}
-                onChange={(event) => {
-                  setSelectedCollection(event.target.value);
-                  setPage(1);
-                }}
-                style={styles.select}
-              >
-                {collectionOptions.map((collection) => <option key={collection} value={collection}>{collection}</option>)}
-              </select>
-            </label>
-          </div>
-
-          <div style={styles.actionRow}>
-            <button type="button" onClick={resetFilters} style={styles.resetButton}>
-              Reset Filters
+                <path d="M7 10l5 5 5-5z" />
+              </svg>
             </button>
-            <span style={styles.filterStatus}>
-              {activeFilterCount ? `${activeFilterCount} filters active` : 'Browsing all available titles'}
-            </span>
-          </div>
+          )}
+
+          <div
+            id="filter-panel"
+            style={{
+              ...styles.filterPanelInner,
+              ...(isMobile && !filtersOpen ? styles.filterPanelHidden : {}),
+            }}
+          >
+            <div style={styles.filterGrid}>
+              <label style={styles.filterField}>
+                <span style={styles.filterLabel}>Genre</span>
+                <select
+                  value={selectedGenre}
+                  onChange={(event) => {
+                    setSelectedGenre(event.target.value);
+                    setPage(1);
+                  }}
+                  style={styles.select}
+                >
+                  {genreOptions.map((genre) => <option key={genre} value={genre}>{genre}</option>)}
+                </select>
+              </label>
+
+              <label style={styles.filterField}>
+                <span style={styles.filterLabel}>Language</span>
+                <select
+                  value={selectedLanguage}
+                  onChange={(event) => {
+                    setSelectedLanguage(event.target.value);
+                    setPage(1);
+                  }}
+                  style={styles.select}
+                >
+                  {languageOptions.map((language) => <option key={language} value={language}>{language}</option>)}
+                </select>
+              </label>
+
+              <label style={styles.filterField}>
+                <span style={styles.filterLabel}>Sort</span>
+                <select
+                  value={sortBy}
+                  onChange={(event) => {
+                    setSortBy(event.target.value);
+                    setPage(1);
+                  }}
+                  style={styles.select}
+                >
+                  <option value="latest">Latest</option>
+                  <option value="popular">Popular</option>
+                  <option value="trending">Trending</option>
+                  <option value="rating">Top Rated</option>
+                  <option value="featured">Featured Order</option>
+                </select>
+              </label>
+
+              <label style={styles.filterField}>
+                <span style={styles.filterLabel}>Collection</span>
+                <select
+                  value={selectedCollection}
+                  onChange={(event) => {
+                    setSelectedCollection(event.target.value);
+                    setPage(1);
+                  }}
+                  style={styles.select}
+                >
+                  {collectionOptions.map((collection) => <option key={collection} value={collection}>{collection}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <div style={styles.actionRow}>
+              <button type="button" onClick={resetFilters} style={styles.resetButton}>
+                Reset Filters
+              </button>
+              <span style={styles.filterStatus}>
+                {activeFilterCount ? `${activeFilterCount} filters active` : 'Browsing all available titles'}
+              </span>
+            </div>
+          </div>{/* end filterPanelInner */}
         </div>
       </section>
 
@@ -352,7 +467,7 @@ function BrowsePage({ type }) {
       </div>
 
       {isLoading ? (
-        <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : {}) }}>
+        <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : isTablet ? styles.gridTablet : {}) }}>
           {Array.from({ length: 12 }).map((_, i) => (
             <CardSkeleton key={i} />
           ))}
@@ -371,47 +486,21 @@ function BrowsePage({ type }) {
         </div>
       ) : (
         <>
-          <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : {}) }}>
+          <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : isTablet ? styles.gridTablet : {}) }}>
             {filteredContent.map((item, index) => (
-              <Link
-                key={item.id}
-                to={item.type === 'series' ? `/series/${item.id}` : `/movies/${item.id}`}
-                style={styles.card}
-              >
-                <div style={styles.posterWrapper}>
-                  <img src={item.poster} alt={item.title} style={styles.poster} loading="lazy" />
-                  <div style={styles.overlay} />
-                  <div style={styles.rankBadge}>{String(index + 1).padStart(2, '0')}</div>
-                  <div style={styles.meta}>
-                    <span style={styles.rating}>★ {item.rating}</span>
-                    <span style={styles.badge}>{item.type === 'series' ? 'Series' : 'Movie'}</span>
-                  </div>
-                </div>
-                <div style={styles.info}>
-                  <div style={styles.infoTop}>
-                    <h3 style={styles.cardTitle}>{item.title}</h3>
-                    {item.metadataStatus === 'needs_review' && (
-                      <span style={styles.reviewBadge}>Review</span>
-                    )}
-                  </div>
-                  <span style={styles.cardMeta}>{`${item.genre} | ${item.year}`}</span>
-                  <span style={styles.languageMeta}>{`${item.language}${item.runtime ? ` | ${item.runtime} min` : ''}`}</span>
-                  {item.collection ? <span style={styles.collectionMeta}>{item.collection}</span> : null}
-                </div>
-              </Link>
+              <BrowseCard key={item.id} item={item} index={index} isMobile={isMobile} />
             ))}
           </div>
 
           {hasMore && (
-            <div style={styles.loadMoreWrap}>
-              <button
-                type="button"
-                onClick={() => fetchNextPage()}
-                style={styles.loadMoreButton}
-                disabled={isFetchingNextPage}
-              >
-                {isFetchingNextPage ? 'Loading More...' : 'Load More Titles'}
-              </button>
+            <div ref={loadMoreRef} style={styles.loadMoreWrap}>
+              {isFetchingNextPage && (
+                <div style={styles.loadingSpinner} aria-label="Loading more titles">
+                  <div style={styles.spinnerDot} />
+                  <div style={{ ...styles.spinnerDot, animationDelay: '0.15s' }} />
+                  <div style={{ ...styles.spinnerDot, animationDelay: '0.3s' }} />
+                </div>
+              )}
             </div>
           )}
         </>
@@ -457,10 +546,6 @@ const styles = {
   heroMobile: {
     padding: '16px',
     gridTemplateColumns: '1fr',
-    position: 'sticky',
-    top: '78px',
-    zIndex: 20,
-    backdropFilter: 'blur(18px)',
   },
   heroCopy: {
     display: 'grid',
@@ -474,7 +559,7 @@ const styles = {
     fontWeight: '700',
   },
   title: {
-    fontSize: 'clamp(2.4rem, 5vw, 4.4rem)',
+    fontSize: 'clamp(2rem, 5vw, 4.4rem)',
     color: 'var(--text-primary)',
   },
   description: {
@@ -585,6 +670,35 @@ const styles = {
     padding: '14px',
     borderRadius: '20px',
   },
+  filterToggleBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    padding: '12px 14px',
+    borderRadius: '14px',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    color: 'var(--text-primary)',
+    fontWeight: '700',
+    fontSize: '0.9rem',
+    minHeight: '48px',
+  },
+  filterPanelInner: {
+    display: 'grid',
+    gap: '12px',
+    overflow: 'hidden',
+    transition: 'max-height 280ms ease, opacity 200ms ease',
+    maxHeight: '1000px',
+    opacity: 1,
+    marginTop: '10px',
+  },
+  filterPanelHidden: {
+    maxHeight: '0',
+    opacity: 0,
+    marginTop: '0',
+    pointerEvents: 'none',
+  },
   filterGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr',
@@ -684,9 +798,16 @@ const styles = {
     gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
     gap: '18px',
   },
+  gridTablet: {
+    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+    gap: '14px',
+  },
   gridMobile: {
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
     gap: '12px',
+  },
+  cardWrap: {
+    position: 'relative',
   },
   card: {
     display: 'grid',
@@ -699,6 +820,12 @@ const styles = {
     aspectRatio: '3 / 4',
     background: 'var(--bg-tertiary)',
     boxShadow: 'var(--shadow-card)',
+  },
+  cardWatchlistBtn: {
+    position: 'absolute',
+    bottom: '10px',
+    right: '10px',
+    zIndex: 2,
   },
   poster: {
     width: '100%',
@@ -795,11 +922,36 @@ const styles = {
     letterSpacing: '0.08em',
     fontWeight: '700',
   },
+  hoverPlay: {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(7,17,31,0.38)',
+    color: '#fff',
+    animation: 'fadeUp 150ms ease',
+  },
   loadMoreWrap: {
     maxWidth: '1400px',
     margin: '24px auto 0 auto',
     display: 'flex',
     justifyContent: 'center',
+    minHeight: '60px',
+    alignItems: 'center',
+  },
+  loadingSpinner: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+  },
+  spinnerDot: {
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    background: 'var(--accent-cyan)',
+    animation: 'spinnerBounce 0.8s ease-in-out infinite',
+    opacity: 0.7,
   },
   loadMoreButton: {
     padding: '14px 24px',

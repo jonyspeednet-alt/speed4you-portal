@@ -1,0 +1,146 @@
+{
+    "name": "ISP Entertainment Portal",
+    "short_name": "ISP Portal",
+    "description": "Premium local streaming for movies, series, and live TV with advanced features.",
+    "start_url": "/",
+    "display": "standalone",
+    "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+    "background_color": "#07111f",
+    "theme_color": "#ff5a5f",
+    "orientation": "any",
+    "scope": "/",
+    "lang": "en",
+    "dir": "ltr",
+    "categories": [
+        "entertainment",
+        "multimedia",
+        "video",
+        "streaming"
+    ],
+    "icons": [
+        {
+            "src": "/icons.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/favicon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Browse Movies",
+            "short_name": "Movies",
+            "description": "Browse and watch movies",
+            "url": "/movies",
+            "icons": [
+                {
+                    "src": "/icons/movie-shortcut.png",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "Browse Series",
+            "short_name": "Series",
+            "description": "Browse and watch TV series",
+            "url": "/series",
+            "icons": [
+                {
+                    "src": "/icons/series-shortcut.png",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "Live TV",
+            "short_name": "TV",
+            "description": "Watch live television",
+            "url": "/tv",
+            "icons": [
+                {
+                    "src": "/icons/tv-shortcut.png",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "My Watchlist",
+            "short_name": "Watchlist",
+            "description": "Access your personal watchlist",
+            "url": "/watchlist",
+            "icons": [
+                {
+                    "src": "/icons/watchlist-shortcut.png",
+                    "sizes": "96x96"
+                }
+            ]
+        }
+    ],
+    "screenshots": [
+        {
+            "src": "/screenshots/desktop-home.png",
+            "sizes": "1280x720",
+            "type": "image/png",
+            "form_factor": "wide",
+            "label": "Home screen with featured content"
+        },
+        {
+            "src": "/screenshots/mobile-browse.png",
+            "sizes": "375x667",
+            "type": "image/png",
+            "form_factor": "narrow",
+            "label": "Browse movies and series"
+        },
+        {
+            "src": "/screenshots/desktop-player.png",
+            "sizes": "1280x720",
+            "type": "image/png",
+            "form_factor": "wide",
+            "label": "Advanced video player"
+        }
+    ],
+    "related_applications": [],
+    "prefer_related_applications": false,
+    "edge_side_panel": {
+        "preferred_width": 400
+    },
+    "launch_handler": {
+        "client_mode": "focus-existing"
+    },
+    "protocol_handlers": [
+        {
+            "protocol": "web+isp",
+            "url": "/handle-protocol?url=%s"
+        }
+    ],
+    "share_target": {
+        "action": "/share",
+        "method": "POST",
+        "enctype": "multipart/form-data",
+        "params": {
+            "title": "title",
+            "text": "text",
+            "url": "url",
+            "files": [
+                {
+                    "name": "media",
+                    "accept": ["video/*", "image/*"]
+                }
+            ]
+        }
+    },
+    "file_handlers": [
+        {
+            "action": "/open-file",
+            "accept": {
+                "video/*": [".mp4", ".webm", ".mkv", ".avi"],
+                "image/*": [".jpg", ".jpeg", ".png", ".gif", ".webp"]
+            }
+        }
+    ]
+}

@@ -1,19 +1,90 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Import-EnvFile {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Path
+  )
+
+  if (-not (Test-Path -LiteralPath $Path)) {
+    return $false
+  }
+
+  foreach ($rawLine in Get-Content -LiteralPath $Path) {
+    $line = $rawLine.Trim()
+    if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) {
+      continue
+    }
+
+    $separatorIndex = $line.IndexOf('=')
+    if ($separatorIndex -lt 1) {
+      continue
+    }
+
+    $name = $line.Substring(0, $separatorIndex).Trim()
+    $value = $line.Substring($separatorIndex + 1).Trim()
+
+    if (
+      ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+      ($value.StartsWith("'") -and $value.EndsWith("'"))
+    ) {
+      $value = $value.Substring(1, $value.Length - 2)
+    }
+
+    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+      [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+    }
+  }
+
+  return $true
+}
+
+function Initialize-DeploySettings {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ProjectRoot
+  )
+
+  $searchRoots = [System.Collections.Generic.List[string]]::new()
+  $searchRoots.Add($ProjectRoot)
+
+  $parent = Split-Path -Parent $ProjectRoot
+  while (-not [string]::IsNullOrWhiteSpace($parent) -and $parent -ne $ProjectRoot) {
+    if (Test-Path -LiteralPath (Join-Path $parent '.git')) {
+      $searchRoots.Add($parent)
+      break
+    }
+
+    $ProjectRoot = $parent
+    $parent = Split-Path -Parent $ProjectRoot
+  }
+
+  foreach ($searchRoot in $searchRoots) {
+    $candidatePaths = @(
+      (Join-Path $searchRoot '.env.deploy.local'),
+      (Join-Path $searchRoot '.env.deploy'),
+      (Join-Path $searchRoot 'backend\.env.deploy'),
+      (Join-Path $searchRoot 'backend\.env.deploy.local')
+    )
+
+    foreach ($candidatePath in $candidatePaths) {
+      if (Import-EnvFile -Path $candidatePath) {
+        Write-Host "Loaded deploy settings from $candidatePath"
+        return
+      }
+    }
+  }
+}
+
 function Get-RequiredSetting {
   param(
     [Parameter(Mandatory = $true)]
-    [string]$Name,
-    [string]$DefaultValue = ''
+    [string]$Name
   )
 
   $value = [Environment]::GetEnvironmentVariable($Name)
   if ([string]::IsNullOrWhiteSpace($value)) {
-    if (-not [string]::IsNullOrWhiteSpace($DefaultValue)) {
-      return $DefaultValue
-    }
-
     throw "Missing required environment variable: $Name"
   }
 
@@ -36,30 +107,42 @@ function Get-OptionalSetting {
   return $value
 }
 
+function Get-DefaultPublicHealthUrl {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$PortalUrl
+  )
+
+  try {
+    $portalUri = [Uri]$PortalUrl
+    return "$($portalUri.Scheme)://$($portalUri.Authority)/portal-api/health"
+  } catch {
+    throw "Could not derive DEPLOY_PUBLIC_HEALTH_URL from DEPLOY_PUBLIC_PORTAL_URL: $PortalUrl"
+  }
+}
+
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $projectRoot
+Initialize-DeploySettings -ProjectRoot $projectRoot
 
 $deployConfig = @{
-  Host = Get-RequiredSetting 'DEPLOY_HOST' '203.0.113.2'
-  Port = [int](Get-RequiredSetting 'DEPLOY_PORT' '2973')
-  User = Get-RequiredSetting 'DEPLOY_USER' 'speed4you'
-  Password = Get-RequiredSetting 'DEPLOY_PASSWORD' 'Speed##ftpsn'
-  HostKey = Get-RequiredSetting 'DEPLOY_HOST_KEY' 'ssh-ed25519 255 SHA256:RVa4r61dsjHbh52j0eIllF0yCj6rJebnPKnj7x3JXco'
-  RemoteFrontendPath = Get-RequiredSetting 'DEPLOY_REMOTE_FRONTEND_PATH' '/var/www/html/portal'
-  RemoteBackendPath = Get-RequiredSetting 'DEPLOY_REMOTE_BACKEND_PATH' '/home/speed4you/portal-app/backend'
-  RemotePidFile = Get-OptionalSetting 'DEPLOY_REMOTE_PID_FILE' '/home/speed4you/backend.pid'
-  RemotePort = [int](Get-RequiredSetting 'DEPLOY_REMOTE_PORT' '4100')
-  RemoteStagingBase = Get-OptionalSetting 'DEPLOY_REMOTE_STAGING_BASE' '/home/speed4you/portal-deploy-staging'
-  RemoteBackupBase = Get-OptionalSetting 'DEPLOY_REMOTE_BACKUP_BASE' '/home/speed4you/portal-deploy-backups'
-  SudoPassword = Get-RequiredSetting 'DEPLOY_SUDO_PASSWORD' 'Speed##ftpsn'
+  Host = Get-RequiredSetting 'DEPLOY_HOST'
+  Port = [int](Get-RequiredSetting 'DEPLOY_PORT')
+  User = Get-RequiredSetting 'DEPLOY_USER'
+  Password = Get-RequiredSetting 'DEPLOY_PASSWORD'
+  HostKey = Get-RequiredSetting 'DEPLOY_HOST_KEY'
+  RemoteFrontendPath = Get-RequiredSetting 'DEPLOY_REMOTE_FRONTEND_PATH'
+  RemoteBackendPath = Get-RequiredSetting 'DEPLOY_REMOTE_BACKEND_PATH'
+  RemotePidFile = Get-OptionalSetting 'DEPLOY_REMOTE_PID_FILE' '/home/deploy/backend.pid'
+  RemotePort = [int](Get-RequiredSetting 'DEPLOY_REMOTE_PORT')
+  RemoteStagingBase = Get-OptionalSetting 'DEPLOY_REMOTE_STAGING_BASE' '/home/deploy/portal-deploy-staging'
+  RemoteBackupBase = Get-OptionalSetting 'DEPLOY_REMOTE_BACKUP_BASE' '/home/deploy/portal-deploy-backups'
+  SudoPassword = Get-RequiredSetting 'DEPLOY_SUDO_PASSWORD'
   RemoteServiceName = Get-OptionalSetting 'DEPLOY_REMOTE_SERVICE_NAME' 'isp-portal.service'
-  RemoteCorsAllowedOrigins = Get-RequiredSetting 'DEPLOY_REMOTE_CORS_ALLOWED_ORIGINS' 'https://data.speed4you.net'
-  RemotePlayerCacheRoot = Get-RequiredSetting 'DEPLOY_REMOTE_PLAYER_CACHE_ROOT' '/var/www/html/Extra_Storage/portal-media-cache'
-  JwtSecret = Get-RequiredSetting 'DEPLOY_JWT_SECRET' 'a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef12'
-  AdminUsername = Get-RequiredSetting 'DEPLOY_ADMIN_USERNAME' 'admin'
-  AdminPasswordHash = Get-RequiredSetting 'DEPLOY_ADMIN_PASSWORD_HASH' '$2a$10$ejyljPiCt5J0tvO68DS99OnzyystXkHwgn9pN44txXcxGs/XLlKtK'
-  PublicPortalUrl = Get-RequiredSetting 'DEPLOY_PUBLIC_PORTAL_URL' 'https://data.speed4you.net/portal'
-  PublicApiUrl = Get-RequiredSetting 'DEPLOY_PUBLIC_API_URL' 'https://data.speed4you.net/portal-api/api/content/latest?limit=1'
+  RemoteCorsAllowedOrigins = Get-RequiredSetting 'DEPLOY_REMOTE_CORS_ALLOWED_ORIGINS'
+  RemotePlayerCacheRoot = Get-RequiredSetting 'DEPLOY_REMOTE_PLAYER_CACHE_ROOT'
+  PublicPortalUrl = Get-RequiredSetting 'DEPLOY_PUBLIC_PORTAL_URL'
+  PublicHealthUrl = Get-OptionalSetting 'DEPLOY_PUBLIC_HEALTH_URL' (Get-DefaultPublicHealthUrl -PortalUrl (Get-RequiredSetting 'DEPLOY_PUBLIC_PORTAL_URL'))
 }
 
 $plink = 'C:\Program Files\PuTTY\plink.exe'
@@ -118,6 +201,66 @@ function Copy-ToRemote {
   }
 }
 
+function Invoke-WebRequestWithRetry {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Uri,
+    [int]$MaxAttempts = 5,
+    [int]$TimeoutSec = 20
+  )
+
+  $attempt = 0
+  $lastError = $null
+
+  while ($attempt -lt $MaxAttempts) {
+    $attempt++
+
+    try {
+      return Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec $TimeoutSec
+    } catch {
+      $lastError = $_
+      $response = $_.Exception.Response
+      $statusCode = $null
+      $retryAfter = $null
+
+      if ($response) {
+        try {
+          $statusCode = [int]$response.StatusCode
+        } catch {
+          $statusCode = $null
+        }
+
+        try {
+          $retryAfterHeader = $response.Headers['Retry-After']
+          if ($retryAfterHeader) {
+            $retryAfter = [int]$retryAfterHeader
+          }
+        } catch {
+          $retryAfter = $null
+        }
+      }
+
+      $isRetryable = $statusCode -in @(429, 500, 502, 503, 504)
+      if (-not $isRetryable -or $attempt -ge $MaxAttempts) {
+        throw
+      }
+
+      $sleepSeconds = if ($retryAfter -and $retryAfter -gt 0) {
+        [Math]::Min($retryAfter, 30)
+      } else {
+        [Math]::Min(5 * $attempt, 15)
+      }
+
+      Write-Host "Verification for $Uri returned status $statusCode. Retrying in $sleepSeconds seconds... (attempt $attempt/$MaxAttempts)"
+      Start-Sleep -Seconds $sleepSeconds
+    }
+  }
+
+  if ($lastError) {
+    throw $lastError
+  }
+}
+
 Write-Host 'Building frontend...'
 Push-Location (Join-Path $projectRoot 'frontend')
 npm run build
@@ -157,9 +300,6 @@ else
 PORT=$($deployConfig.RemotePort)
 CORS_ALLOWED_ORIGINS=$($deployConfig.RemoteCorsAllowedOrigins)
 PLAYER_CACHE_ROOT=$($deployConfig.RemotePlayerCacheRoot)
-JWT_SECRET=$($deployConfig.JwtSecret)
-ADMIN_USERNAME=$($deployConfig.AdminUsername)
-ADMIN_PASSWORD_HASH=$($deployConfig.AdminPasswordHash)
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=isp_entertainment
@@ -176,21 +316,6 @@ fi
 if ! grep -Eq '^[[:space:]]*PLAYER_CACHE_ROOT=' '$($deployConfig.RemoteBackendPath)/.env'; then
   printf 'PLAYER_CACHE_ROOT=$($deployConfig.RemotePlayerCacheRoot)\n' >> '$($deployConfig.RemoteBackendPath)/.env'
   echo 'Added missing PLAYER_CACHE_ROOT to remote .env'
-fi
-
-if ! grep -Eq '^[[:space:]]*JWT_SECRET=' '$($deployConfig.RemoteBackendPath)/.env'; then
-  printf 'JWT_SECRET=$($deployConfig.JwtSecret)\n' >> '$($deployConfig.RemoteBackendPath)/.env'
-  echo 'Added missing JWT_SECRET to remote .env'
-fi
-
-if ! grep -Eq '^[[:space:]]*ADMIN_USERNAME=' '$($deployConfig.RemoteBackendPath)/.env'; then
-  printf 'ADMIN_USERNAME=$($deployConfig.AdminUsername)\n' >> '$($deployConfig.RemoteBackendPath)/.env'
-  echo 'Added missing ADMIN_USERNAME to remote .env'
-fi
-
-if ! grep -Eq '^[[:space:]]*ADMIN_PASSWORD_HASH=' '$($deployConfig.RemoteBackendPath)/.env'; then
-  printf 'ADMIN_PASSWORD_HASH=$($deployConfig.AdminPasswordHash)\n' >> '$($deployConfig.RemoteBackendPath)/.env'
-  echo 'Added missing ADMIN_PASSWORD_HASH to remote .env'
 fi
 
 if ! grep -Eq '^[[:space:]]*FFMPEG_PATH=' '$($deployConfig.RemoteBackendPath)/.env'; then
@@ -252,6 +377,75 @@ run_sudo() {
   printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' "$@"
 }
 
+resolve_service_name() {
+  for candidate in "$SERVICE_NAME" 'isp-portal-backend.service' 'isp-portal-backend' 'isp-portal.service' 'isp-portal'; do
+    if [ -n "$candidate" ] && systemctl list-unit-files --type=service --all 2>/dev/null | grep -Fq "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+wait_for_port_release() {
+  for _ in $(seq 1 20); do
+    if command -v ss >/dev/null 2>&1; then
+      if ! run_sudo ss -ltnp "( sport = :__REMOTE_PORT__ )" 2>/dev/null | grep -q ":__REMOTE_PORT__"; then
+        return 0
+      fi
+    elif command -v lsof >/dev/null 2>&1; then
+      if ! run_sudo lsof -iTCP:__REMOTE_PORT__ -sTCP:LISTEN >/dev/null 2>&1; then
+        return 0
+      fi
+    else
+      sleep 1
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  return 1
+}
+
+stop_backend_processes() {
+  if [ -f "$PID_FILE" ]; then
+    OLD_PID=$(cat "$PID_FILE" 2>/dev/null || true)
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+      kill "$OLD_PID" || true
+      sleep 2
+      kill -9 "$OLD_PID" 2>/dev/null || true
+    fi
+  fi
+
+  if command -v fuser >/dev/null 2>&1; then
+    run_sudo fuser -k __REMOTE_PORT__/tcp || true
+  elif command -v lsof >/dev/null 2>&1; then
+    PORT_PIDS=$(run_sudo lsof -t -iTCP:__REMOTE_PORT__ -sTCP:LISTEN 2>/dev/null || true)
+    if [ -n "$PORT_PIDS" ]; then
+      run_sudo kill $PORT_PIDS || true
+      sleep 2
+      run_sudo kill -9 $PORT_PIDS || true
+    fi
+  fi
+
+  wait_for_port_release || true
+}
+
+print_service_diagnostics() {
+  SERVICE_TO_REPORT="$1"
+  if [ -z "$SERVICE_TO_REPORT" ]; then
+    return 0
+  fi
+
+  echo "=== systemctl status ($SERVICE_TO_REPORT) ===" >&2
+  run_sudo systemctl status "$SERVICE_TO_REPORT" --no-pager -l >&2 || true
+
+  echo "=== journalctl ($SERVICE_TO_REPORT, last 50 lines) ===" >&2
+  run_sudo journalctl -u "$SERVICE_TO_REPORT" --no-pager -n 50 >&2 || true
+}
+
 mkdir -p "$BACKUP_ROOT/frontend" "$BACKUP_ROOT/backend-data"
 
 if [ -d "$FRONTEND_PATH" ]; then
@@ -274,9 +468,13 @@ cp "$STAGING_ROOT/backend/package.json" "$BACKEND_PATH/package.json"
 cp "$STAGING_ROOT/backend/package-lock.json" "$BACKEND_PATH/package-lock.json"
 rm -rf "$BACKEND_PATH/src"
 rm -rf "$BACKEND_PATH/scripts"
+rm -rf "$BACKEND_PATH/migrations"
 cp -a "$STAGING_ROOT/backend/src" "$BACKEND_PATH/src"
 if [ -d "$STAGING_ROOT/backend/scripts" ]; then
   cp -a "$STAGING_ROOT/backend/scripts" "$BACKEND_PATH/scripts"
+fi
+if [ -d "$STAGING_ROOT/backend/migrations" ]; then
+  cp -a "$STAGING_ROOT/backend/migrations" "$BACKEND_PATH/migrations"
 fi
 
 for file in catalog.json scanner-log.json scanner-roots.json scanner-runtime.json scanner-state.json; do
@@ -290,32 +488,32 @@ npm ci --omit=dev
 
 __REMOTE_ENV_WRITE__
 
-if [ -f "$PID_FILE" ]; then
-  OLD_PID=$(cat "$PID_FILE" 2>/dev/null || true)
-  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-    kill "$OLD_PID" || true
-    sleep 2
-  fi
+stop_backend_processes
+
+if command -v systemctl >/dev/null 2>&1; then
+  RESOLVED_SERVICE_NAME=$(resolve_service_name || true)
+else
+  RESOLVED_SERVICE_NAME=''
 fi
 
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k __REMOTE_PORT__/tcp || true
-  sleep 2
-fi
-
-if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files "$SERVICE_NAME" >/dev/null 2>&1; then
+if [ -n "$RESOLVED_SERVICE_NAME" ]; then
   run_sudo systemctl daemon-reload
-  run_sudo systemctl restart "$SERVICE_NAME"
+  run_sudo systemctl stop "$RESOLVED_SERVICE_NAME" || true
+  stop_backend_processes
+  if ! run_sudo systemctl start "$RESOLVED_SERVICE_NAME"; then
+    print_service_diagnostics "$RESOLVED_SERVICE_NAME"
+    exit 1
+  fi
   sleep 5
 else
-  pkill -f "portal-app/backend/src/index.js" || true
+  stop_backend_processes
   nohup /usr/bin/node src/index.js > "$BACKEND_PATH/server.log" 2> "$BACKEND_PATH/server.err.log" < /dev/null &
   echo $! > "$PID_FILE"
-  sleep 3
+  sleep 5
 fi
 
 HEALTH_OK=0
-for attempt in 1 2 3 4 5; do
+for attempt in $(seq 1 60); do
   if command -v curl >/dev/null 2>&1; then
     if curl -fsS http://127.0.0.1:__REMOTE_PORT__/health; then
       HEALTH_OK=1
@@ -328,7 +526,8 @@ for attempt in 1 2 3 4 5; do
     fi
   fi
 
-  sleep 2
+  echo "Waiting for backend to start (attempt $attempt/60)..."
+  sleep 3
 done
 
 if [ "$HEALTH_OK" -ne 1 ]; then
@@ -357,12 +556,12 @@ $remoteScript = $remoteScript.Replace('__REMOTE_ENV_WRITE__', $remoteEnvWrite)
 Write-Host 'Applying release and restarting backend...'
 Invoke-RemoteCommand $remoteScript
 
-Write-Host 'Verifying public site and API...'
+Write-Host 'Verifying public site and backend health...'
 try {
-  $portalResponse = Invoke-WebRequest -Uri $deployConfig.PublicPortalUrl -UseBasicParsing -TimeoutSec 20
-  $apiResponse = Invoke-WebRequest -Uri $deployConfig.PublicApiUrl -UseBasicParsing -TimeoutSec 20
+  $portalResponse = Invoke-WebRequestWithRetry -Uri $deployConfig.PublicPortalUrl
+  $healthResponse = Invoke-WebRequestWithRetry -Uri $deployConfig.PublicHealthUrl
   Write-Host "Portal status: $($portalResponse.StatusCode)"
-  Write-Host "API status: $($apiResponse.StatusCode)"
+  Write-Host "Health status: $($healthResponse.StatusCode)"
 } catch {
   throw "Deploy finished, but public verification failed: $($_.Exception.Message)"
 }

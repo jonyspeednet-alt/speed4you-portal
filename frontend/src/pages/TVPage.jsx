@@ -1,22 +1,68 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import tvService from '../services/tvService';
 import { useBreakpoint } from '../hooks';
 
 const TV_API_BASE = (import.meta.env.VITE_API_URL || '/portal-api').replace(/\/$/, '');
 
 function withApiBase(path) {
-  if (!path) {
-    return '';
-  }
-
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return path;
-  }
-
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
   return `${TV_API_BASE}${path}`;
 }
 
-function TVPage() {
+const CATEGORY_COLORS = {
+  'Bangla': '#ffc857',
+  'Bengali': '#ffc857',
+  'Sports': '#4ade80',
+  'News': '#60a5fa',
+  'Kids': '#f472b6',
+  'Hindi': '#fb923c',
+  'English': '#7df9ff',
+  'Movies': '#c084fc',
+  'Music': '#f9a8d4',
+};
+
+function getCategoryColor(category) {
+  if (!category) return 'rgba(255,255,255,0.18)';
+  for (const [key, color] of Object.entries(CATEGORY_COLORS)) {
+    if (category.toLowerCase().includes(key.toLowerCase())) return color;
+  }
+  return 'rgba(255,255,255,0.18)';
+}
+
+function LiveDot() {
+  return (
+    <span style={s.liveDot} aria-label="Live" />
+  );
+}
+
+function ChannelLogo({ src, name, size = 44 }) {
+  const [err, setErr] = useState(false);
+  const initials = (name || '?').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  return (
+    <div style={{ ...s.logoBox, width: size, height: size }}>
+      {!err && src ? (
+        <img src={src} alt={name} style={s.logoImg} loading="lazy" onError={() => setErr(true)} />
+      ) : (
+        <span style={{ ...s.logoInitials, fontSize: size * 0.3 }}>{initials}</span>
+      )}
+    </div>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div style={s.skeletonCard}>
+      <div style={s.skeletonLogo} />
+      <div style={s.skeletonLines}>
+        <div style={{ ...s.skeletonLine, width: '70%' }} />
+        <div style={{ ...s.skeletonLine, width: '45%', height: 10 }} />
+      </div>
+    </div>
+  );
+}
+
+export default function TVPage() {
   const { isMobile, isTablet } = useBreakpoint();
   const [payload, setPayload] = useState({ categories: [], channels: [], defaultStreamId: '' });
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -24,76 +70,51 @@ function TVPage() {
   const [searchText, setSearchText] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [playerDiagnostics, setPlayerDiagnostics] = useState({
-    streamId: '',
-    state: 'Waiting for player diagnostics...',
-    source: '',
-    lines: [],
-  });
+  const [playerLoading, setPlayerLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const channelListRef = useRef(null);
+  const searchRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadChannels() {
+    async function load() {
       try {
         setLoading(true);
         setError('');
-        const response = await tvService.getChannels();
-
+        const res = await tvService.getChannels();
         if (!cancelled) {
-          setPayload(response);
-          setSelectedStreamId(response.defaultStreamId || response.channels?.[0]?.streamId || '');
+          setPayload(res);
+          setSelectedStreamId(res.defaultStreamId || res.channels?.[0]?.streamId || '');
         }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError.message || 'TV channels are unavailable right now.');
-        }
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'TV channels unavailable right now.');
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
-
-    loadChannels();
-    return () => {
-      cancelled = true;
-    };
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   const categories = useMemo(() => ['All', ...(payload.categories || [])], [payload.categories]);
 
   const filteredChannels = useMemo(() => {
-    const query = searchText.trim().toLowerCase();
-
-    return (payload.channels || []).filter((channel) => {
-      const categoryMatch = selectedCategory === 'All'
-        || channel.category === selectedCategory
-        || channel.categories?.includes(selectedCategory);
-      if (!categoryMatch) {
-        return false;
-      }
-
-      if (!query) {
-        return true;
-      }
-
-      return `${channel.name} ${channel.category}`.toLowerCase().includes(query);
+    const q = searchText.trim().toLowerCase();
+    return (payload.channels || []).filter((ch) => {
+      const catMatch = selectedCategory === 'All'
+        || ch.category === selectedCategory
+        || ch.categories?.includes(selectedCategory);
+      if (!catMatch) return false;
+      if (!q) return true;
+      return `${ch.name} ${ch.category}`.toLowerCase().includes(q);
     });
   }, [payload.channels, searchText, selectedCategory]);
 
   const selectedChannel = useMemo(() => (
-    (payload.channels || []).find((channel) => channel.streamId === selectedStreamId)
+    (payload.channels || []).find((ch) => ch.streamId === selectedStreamId)
     || filteredChannels[0]
     || null
   ), [filteredChannels, payload.channels, selectedStreamId]);
-
-  const playerUrl = selectedChannel
-    ? withApiBase(`/api/tv/player/${selectedChannel.streamId}?${new URLSearchParams({
-      name: selectedChannel.name || '',
-      category: selectedChannel.category || '',
-    }).toString()}`)
-    : '';
 
   useEffect(() => {
     if (!selectedChannel && filteredChannels[0]) {
@@ -101,529 +122,734 @@ function TVPage() {
     }
   }, [filteredChannels, selectedChannel]);
 
+  // Reset player loading state when channel changes
   useEffect(() => {
-    function handleMessage(event) {
-      const data = event.data;
-      if (!data || data.type !== 'tv-player-debug') {
-        return;
-      }
+    setPlayerLoading(true);
+  }, [selectedStreamId]);
 
-      setPlayerDiagnostics({
-        streamId: data.streamId || '',
-        state: data.state || '',
-        source: data.source || '',
-        lines: Array.isArray(data.lines) ? data.lines : [],
-      });
-    }
+  const playerUrl = selectedChannel
+    ? withApiBase(`/api/tv/player/${selectedChannel.streamId}?${new URLSearchParams({
+      name: selectedChannel.name || '',
+      category: selectedChannel.category || '',
+    })}`)
+    : '';
 
-    window.addEventListener('message', handleMessage);
-    return () => {
-      window.removeEventListener('message', handleMessage);
-    };
-  }, []);
+  const catColor = getCategoryColor(selectedChannel?.category);
+  const isNarrow = isMobile || isTablet;
 
-  useEffect(() => {
-    setPlayerDiagnostics({
-      streamId: selectedChannel?.streamId || '',
-      state: selectedChannel ? 'Loading player diagnostics...' : 'Waiting for player diagnostics...',
-      source: playerUrl,
-      lines: [],
-    });
-  }, [playerUrl, selectedChannel]);
+  function selectChannel(streamId) {
+    setSelectedStreamId(streamId);
+    if (isMobile) setSidebarOpen(false);
+  }
 
+  // â”€â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
-    <div style={{ ...styles.page, ...(isMobile ? styles.pageMobile : {}) }}>
-      <section style={{ ...styles.hero, ...(isMobile ? styles.heroMobile : isTablet ? styles.heroTablet : {}) }}>
-        <div style={styles.heroCopy}>
-          <span style={styles.eyebrow}>Live TV</span>
-          <h1 style={styles.title}>Channel surfing, now inside the portal.</h1>
-          <p style={styles.description}>
-            Bangla, Sports, English, Kids, Hindi, and more are now grouped into a dedicated TV section so users can jump into live channels without leaving the site.
-          </p>
-          <div style={{ ...styles.metaRow, ...(isMobile ? styles.metaRowMobile : {}) }}>
-            <div style={styles.metaCard}>
-              <span style={styles.metaLabel}>Channels</span>
-              <strong style={styles.metaValue}>{payload.channels?.length || 0}</strong>
+    <div style={s.page}>
+
+      {/* â”€â”€ Top bar â”€â”€ */}
+      <div style={s.topBar}>
+        <div style={s.topBarLeft}>
+          <span style={s.liveBadge}>
+            <LiveDot />
+            LIVE TV
+          </span>
+          {selectedChannel && (
+            <div style={s.nowPlayingBar}>
+              <ChannelLogo src={withApiBase(selectedChannel.logoPath)} name={selectedChannel.name} size={28} />
+              <div style={s.nowPlayingInfo}>
+                <span style={s.nowPlayingName}>{selectedChannel.name}</span>
+                <span style={{ ...s.nowPlayingCat, color: catColor }}>{selectedChannel.category}</span>
+              </div>
             </div>
-            <div style={styles.metaCard}>
-              <span style={styles.metaLabel}>Categories</span>
-              <strong style={styles.metaValue}>{payload.categories?.length || 0}</strong>
-            </div>
-            <div style={styles.metaCard}>
-              <span style={styles.metaLabel}>Selected</span>
-              <strong style={styles.metaValue}>{selectedChannel?.name || 'Waiting'}</strong>
-            </div>
-          </div>
+          )}
         </div>
-
-        <div style={{ ...styles.heroPanel, ...(isMobile ? styles.heroPanelMobile : {}) }}>
-          <label style={styles.searchWrap}>
-            <span style={styles.searchLabel}>Find channel</span>
-            <input
-              type="text"
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search by name or category"
-              style={styles.searchInput}
-            />
-          </label>
-
-          <div style={{ ...styles.categoryWrap, ...(isMobile ? styles.categoryWrapMobile : {}) }}>
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                onClick={() => setSelectedCategory(category)}
-                style={{
-                  ...styles.categoryChip,
-                  ...(selectedCategory === category ? styles.categoryChipActive : {}),
-                }}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
+        <div style={s.topBarRight}>
+          <span style={s.channelCount}>{payload.channels?.length || 0} channels</span>
+          {isMobile && (
+            <button
+              style={s.sidebarToggle}
+              onClick={() => setSidebarOpen((o) => !o)}
+              aria-label="Toggle channel list"
+              aria-expanded={sidebarOpen}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                {sidebarOpen
+                  ? <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                  : <path d="M4 6h16v2H4zm4 5h12v2H8zm4 5h8v2h-8z" />
+                }
+              </svg>
+              <span>{sidebarOpen ? 'Close' : 'Channels'}</span>
+            </button>
+          )}
         </div>
-      </section>
+      </div>
 
-      <section style={{ ...styles.layout, ...(isMobile ? styles.layoutMobile : isTablet ? styles.layoutTablet : {}) }}>
-        <div style={styles.playerColumn}>
-          <div style={{ ...styles.playerFrameWrap, ...(isMobile ? styles.playerFrameWrapMobile : {}) }}>
+      {/* â”€â”€ Main layout â”€â”€ */}
+      <div style={{ ...s.layout, ...(isNarrow ? s.layoutNarrow : {}) }}>
+
+        {/* â”€â”€ Player column â”€â”€ */}
+        <div style={s.playerCol}>
+
+          {/* Player frame */}
+          <div style={s.playerWrap}>
             {loading ? (
-              <div style={styles.playerState}>Loading live TV channels...</div>
+              <div style={s.playerPlaceholder}>
+                <div style={s.spinnerWrap}>
+                  <div style={s.spinner} />
+                </div>
+                <p style={s.placeholderText}>Loading channels…</p>
+              </div>
             ) : error ? (
-              <div style={styles.playerState}>{error}</div>
+              <div style={s.playerPlaceholder}>
+                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <p style={s.placeholderText}>{error}</p>
+              </div>
             ) : playerUrl ? (
-              <iframe
-                key={selectedChannel?.streamId}
-                src={playerUrl}
-                title={selectedChannel?.name || 'TV Player'}
-                style={{ ...styles.playerFrame, ...(isMobile ? styles.playerFrameMobile : {}) }}
-                allow="autoplay; fullscreen"
-                allowFullScreen
-              />
+              <>
+                {playerLoading && (
+                  <div style={s.playerOverlay}>
+                    <div style={s.spinner} />
+                  </div>
+                )}
+                <iframe
+                  key={selectedChannel?.streamId}
+                  src={playerUrl}
+                  title={selectedChannel?.name || 'TV Player'}
+                  style={s.playerFrame}
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                  onLoad={() => setPlayerLoading(false)}
+                />
+              </>
             ) : (
-              <div style={styles.playerState}>No live TV channel is selected.</div>
+              <div style={s.playerPlaceholder}>
+                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" aria-hidden="true">
+                  <rect x="2" y="7" width="20" height="15" rx="2" /><polyline points="17 2 12 7 7 2" />
+                </svg>
+                <p style={s.placeholderText}>No channel selected</p>
+              </div>
             )}
           </div>
 
-          <div style={styles.nowPlaying}>
-            <span style={styles.nowPlayingLabel}>Now Playing</span>
-            <strong style={styles.nowPlayingTitle}>{selectedChannel?.name || 'Select a channel'}</strong>
-            <span style={styles.nowPlayingMeta}>{selectedChannel?.category || 'Live TV'}</span>
-          </div>
+          {/* Channel info strip */}
+          {selectedChannel && (
+            <div style={{ ...s.infoStrip, borderColor: `${catColor}44` }}>
+              <ChannelLogo src={withApiBase(selectedChannel.logoPath)} name={selectedChannel.name} size={48} />
+              <div style={s.infoStripText}>
+                <div style={s.infoStripName}>{selectedChannel.name}</div>
+                <div style={{ ...s.infoStripCat, color: catColor }}>{selectedChannel.category || 'Live TV'}</div>
+              </div>
+              <div style={s.infoStripRight}>
+                <span style={s.liveTag}>
+                  <LiveDot />
+                  LIVE
+                </span>
+              </div>
+            </div>
+          )}
 
-          <div style={styles.diagnosticsCard}>
-            <div style={styles.diagnosticsHeader}>
-              <span style={styles.diagnosticsEyebrow}>Player Diagnostics</span>
-              <strong style={styles.diagnosticsState}>{playerDiagnostics.state}</strong>
+          {/* Mobile: category pills + search inline */}
+          {isMobile && (
+            <div style={s.mobileCatBar}>
+              <div style={s.mobileCatScroll}>
+                {categories.map((cat) => {
+                  const cc = getCategoryColor(cat);
+                  const active = selectedCategory === cat;
+                  return (
+                    <button
+                      key={cat}
+                      style={{
+                        ...s.catChip,
+                        ...(active ? { background: cc, color: '#08111d', borderColor: 'transparent' } : {}),
+                      }}
+                      onClick={() => setSelectedCategory(cat)}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div style={styles.diagnosticsMeta}>
-              <span>Stream: {playerDiagnostics.streamId || selectedChannel?.streamId || 'n/a'}</span>
-              <span>Source: {playerDiagnostics.source || 'Waiting...'}</span>
-            </div>
-            <pre style={styles.diagnosticsLog}>
-              {playerDiagnostics.lines.length > 0
-                ? playerDiagnostics.lines.join('\n')
-                : 'Player debug events will appear here after the iframe starts reporting.'}
-            </pre>
-          </div>
+          )}
         </div>
 
-        <div style={{ ...styles.listColumn, ...(isMobile ? styles.listColumnMobile : {}) }}>
-          <div style={styles.listHeader}>
-            <div>
-              <span style={styles.listEyebrow}>TV Section</span>
-              <h2 style={styles.listTitle}>Choose a live channel</h2>
-            </div>
-            <span style={styles.countBadge}>{filteredChannels.length} visible</span>
-          </div>
-
-          <div style={{ ...styles.channelGrid, ...(isMobile ? styles.channelGridMobile : {}) }}>
-            {filteredChannels.map((channel) => {
-              const isActive = channel.streamId === selectedChannel?.streamId;
-
-              return (
-                <button
-                  key={channel.id}
-                  type="button"
-                  onClick={() => setSelectedStreamId(channel.streamId)}
-                  style={{
-                    ...styles.channelCard,
-                    ...(isMobile ? styles.channelCardMobile : {}),
-                    ...(isActive ? styles.channelCardActive : {}),
-                  }}
-                >
-                  <div style={styles.logoBox}>
-                    <img src={withApiBase(channel.logoPath)} alt={channel.name} style={styles.channelLogo} loading="lazy" />
-                  </div>
-                  <div style={styles.channelInfo}>
-                    <strong style={styles.channelName}>{channel.name}</strong>
-                    <span style={styles.channelCategory}>{channel.category}</span>
-                  </div>
+        {/* â”€â”€ Sidebar / Channel list â”€â”€ */}
+        <div
+          style={{
+            ...s.sidebar,
+            ...(isNarrow ? s.sidebarNarrow : {}),
+            ...(isMobile && !sidebarOpen ? s.sidebarHidden : {}),
+          }}
+          ref={channelListRef}
+        >
+          {/* Sidebar header */}
+          <div style={s.sidebarHeader}>
+            <div style={s.sidebarSearch}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" aria-hidden="true" style={{ flexShrink: 0 }}>
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                ref={searchRef}
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Search channels…"
+                style={s.searchInput}
+                aria-label="Search channels"
+              />
+              {searchText && (
+                <button style={s.clearBtn} onClick={() => setSearchText('')} aria-label="Clear search">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                  </svg>
                 </button>
-              );
-            })}
+              )}
+            </div>
+
+            {/* Category pills â€” desktop/tablet only */}
+            {!isMobile && (
+              <div style={s.catPills}>
+                {categories.map((cat) => {
+                  const cc = getCategoryColor(cat);
+                  const active = selectedCategory === cat;
+                  return (
+                    <button
+                      key={cat}
+                      style={{
+                        ...s.catChip,
+                        ...(active ? { background: cc, color: '#08111d', borderColor: 'transparent' } : {}),
+                      }}
+                      onClick={() => setSelectedCategory(cat)}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={s.sidebarMeta}>
+              <span style={s.sidebarMetaText}>{filteredChannels.length} channels</span>
+              {searchText && (
+                <span style={s.sidebarMetaText}>Â· "{searchText}"</span>
+              )}
+            </div>
+          </div>
+
+          {/* Channel list */}
+          <div style={s.channelList}>
+            {loading ? (
+              Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
+            ) : filteredChannels.length === 0 ? (
+              <div style={s.emptyState}>
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5" aria-hidden="true">
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <p style={s.emptyText}>No channels found</p>
+                <button style={s.emptyReset} onClick={() => { setSearchText(''); setSelectedCategory('All'); }}>
+                  Clear filters
+                </button>
+              </div>
+            ) : (
+              filteredChannels.map((ch) => {
+                const active = ch.streamId === selectedChannel?.streamId;
+                const cc = getCategoryColor(ch.category);
+                return (
+                  <button
+                    key={ch.id || ch.streamId}
+                    style={{
+                      ...s.channelCard,
+                      ...(active ? { ...s.channelCardActive, boxShadow: `0 0 0 1.5px ${cc}55, 0 8px 24px rgba(0,0,0,0.28)` } : {}),
+                    }}
+                    onClick={() => selectChannel(ch.streamId)}
+                    aria-pressed={active}
+                  >
+                    <div style={{ ...s.channelAccent, background: cc }} />
+                    <ChannelLogo src={withApiBase(ch.logoPath)} name={ch.name} size={42} />
+                    <div style={s.channelInfo}>
+                      <span style={s.channelName}>{ch.name}</span>
+                      <span style={{ ...s.channelCat, color: cc }}>{ch.category}</span>
+                    </div>
+                    {active && <LiveDot />}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
-      </section>
+      </div>
     </div>
   );
 }
 
-const styles = {
+// â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const s = {
+  // Page
   page: {
     minHeight: '100vh',
-    padding: '0 var(--spacing-lg) var(--spacing-3xl)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0',
+    padding: '96px var(--spacing-lg) var(--spacing-2xl)',
   },
-  pageMobile: {
-    padding: '0 var(--spacing-md) var(--spacing-2xl)',
+
+  // Top bar
+  topBar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    padding: '14px 0 16px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
   },
-  hero: {
-    maxWidth: '1440px',
-    margin: '0 auto 24px auto',
-    display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.15fr) minmax(320px, 0.85fr)',
-    gap: 'var(--spacing-xl)',
-    alignItems: 'stretch',
-  },
-  heroTablet: {
-    gridTemplateColumns: '1fr',
-  },
-  heroMobile: {
-    gridTemplateColumns: '1fr',
+  topBarLeft: {
+    display: 'flex',
+    alignItems: 'center',
     gap: '16px',
+    flexWrap: 'wrap',
   },
-  heroCopy: {
-    padding: '32px',
-    borderRadius: '30px',
-    background: 'linear-gradient(160deg, rgba(8,20,36,0.94), rgba(18,39,64,0.78) 54%, rgba(145,49,38,0.56))',
-    border: '1px solid rgba(255,255,255,0.08)',
-    boxShadow: 'var(--shadow-hero)',
+  topBarRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
   },
-  eyebrow: {
-    display: 'inline-block',
-    marginBottom: '14px',
-    fontSize: '0.78rem',
+  liveBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '7px',
+    padding: '6px 12px',
+    borderRadius: '999px',
+    background: 'rgba(239,68,68,0.14)',
+    border: '1px solid rgba(239,68,68,0.3)',
+    color: '#ef4444',
+    fontSize: '0.72rem',
+    fontWeight: '800',
+    letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    letterSpacing: '0.16em',
-    color: 'var(--accent-amber)',
-    fontWeight: '700',
   },
-  title: {
-    maxWidth: '11ch',
-    color: 'var(--text-primary)',
-    marginBottom: '14px',
-    fontSize: 'clamp(2.6rem, 5vw, 4.8rem)',
+  liveDot: {
+    display: 'inline-block',
+    width: '7px',
+    height: '7px',
+    borderRadius: '50%',
+    background: '#ef4444',
+    boxShadow: '0 0 0 3px rgba(239,68,68,0.28)',
+    animation: 'glowPulse 1.8s ease-in-out infinite',
+    flexShrink: 0,
   },
-  description: {
-    maxWidth: '58ch',
-    color: 'var(--text-secondary)',
-    lineHeight: '1.8',
-    marginBottom: '24px',
-  },
-  metaRow: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-    gap: '14px',
-  },
-  metaRowMobile: {
-    gridTemplateColumns: '1fr',
-  },
-  metaCard: {
-    padding: '16px',
-    borderRadius: '20px',
+  nowPlayingBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '6px 12px 6px 6px',
+    borderRadius: '999px',
     background: 'rgba(255,255,255,0.05)',
     border: '1px solid rgba(255,255,255,0.08)',
   },
-  metaLabel: {
-    display: 'block',
-    marginBottom: '8px',
-    fontSize: '0.72rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.12em',
-    color: 'var(--text-muted)',
-    fontWeight: '700',
-  },
-  metaValue: {
-    color: 'var(--text-primary)',
-    fontSize: '1rem',
-    fontWeight: '800',
-    lineHeight: '1.4',
-  },
-  heroPanel: {
-    padding: '28px',
-    borderRadius: '30px',
-    background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))',
-    border: '1px solid rgba(255,255,255,0.08)',
-    display: 'grid',
-    gap: '18px',
-    alignContent: 'start',
-    boxShadow: 'var(--shadow-soft)',
-  },
-  heroPanelMobile: {
-    padding: '16px',
-    borderRadius: '22px',
-  },
-  searchWrap: {
-    display: 'grid',
-    gap: '10px',
-  },
-  searchLabel: {
-    fontSize: '0.76rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.14em',
-    color: 'var(--text-muted)',
-    fontWeight: '700',
-  },
-  searchInput: {
-    width: '100%',
-    padding: '14px 16px',
-    borderRadius: '18px',
-    border: '1px solid rgba(255,255,255,0.08)',
-    background: 'rgba(6,14,24,0.78)',
-    color: 'var(--text-primary)',
-  },
-  categoryWrap: {
+  nowPlayingInfo: {
     display: 'flex',
-    flexWrap: 'wrap',
-    gap: '10px',
+    flexDirection: 'column',
+    gap: '1px',
   },
-  categoryWrapMobile: {
-    flexWrap: 'nowrap',
-    overflowX: 'auto',
-    paddingBottom: '4px',
-    scrollbarWidth: 'none',
-  },
-  categoryChip: {
-    padding: '10px 14px',
-    borderRadius: '999px',
-    border: '1px solid rgba(255,255,255,0.08)',
-    background: 'rgba(255,255,255,0.04)',
-    color: 'var(--text-secondary)',
+  nowPlayingName: {
+    color: 'var(--text-primary)',
+    fontSize: '0.82rem',
     fontWeight: '700',
+    lineHeight: 1.2,
   },
-  categoryChipActive: {
-    color: '#08111d',
-    background: 'var(--accent-amber)',
-    borderColor: 'transparent',
+  nowPlayingCat: {
+    fontSize: '0.68rem',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    lineHeight: 1.2,
   },
+  channelCount: {
+    color: 'var(--text-muted)',
+    fontSize: '0.8rem',
+    fontWeight: '600',
+  },
+  sidebarToggle: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '7px',
+    padding: '9px 14px',
+    borderRadius: '12px',
+    background: 'rgba(255,255,255,0.07)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    color: 'var(--text-primary)',
+    fontWeight: '700',
+    fontSize: '0.82rem',
+    minHeight: '40px',
+  },
+
+  // Layout
   layout: {
-    maxWidth: '1440px',
-    margin: '0 auto',
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.1fr) minmax(340px, 0.9fr)',
-    gap: 'var(--spacing-xl)',
+    gridTemplateColumns: 'minmax(0, 1.15fr) 360px',
+    gap: '20px',
     alignItems: 'start',
+    flex: 1,
   },
-  layoutTablet: {
+  layoutNarrow: {
     gridTemplateColumns: '1fr',
   },
-  layoutMobile: {
-    gridTemplateColumns: '1fr',
+
+  // Player column
+  playerCol: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
   },
-  playerColumn: {
-    display: 'grid',
-    gap: '16px',
-  },
-  playerFrameWrap: {
-    minHeight: '540px',
-    borderRadius: '30px',
+  playerWrap: {
+    position: 'relative',
+    width: '100%',
+    aspectRatio: '16 / 9',
+    borderRadius: '20px',
     overflow: 'hidden',
     background: '#02060c',
     border: '1px solid rgba(255,255,255,0.08)',
-    boxShadow: 'var(--shadow-hero)',
-  },
-  playerFrameWrapMobile: {
-    minHeight: '240px',
+    boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
   },
   playerFrame: {
+    position: 'absolute',
+    inset: 0,
     width: '100%',
-    minHeight: '540px',
-    border: '0',
+    height: '100%',
+    border: 'none',
     background: '#000',
   },
-  playerFrameMobile: {
-    minHeight: '240px',
-  },
-  playerState: {
-    minHeight: '540px',
+  playerOverlay: {
+    position: 'absolute',
+    inset: 0,
     display: 'grid',
     placeItems: 'center',
-    color: 'var(--text-secondary)',
-    padding: '24px',
-    textAlign: 'center',
+    background: 'rgba(2,6,12,0.82)',
+    zIndex: 2,
   },
-  nowPlaying: {
-    padding: '20px 24px',
-    borderRadius: '24px',
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(255,255,255,0.08)',
+  playerPlaceholder: {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '14px',
+    color: 'var(--text-muted)',
+  },
+  placeholderText: {
+    color: 'var(--text-muted)',
+    fontSize: '0.9rem',
+    textAlign: 'center',
+    padding: '0 24px',
+  },
+  spinnerWrap: {
     display: 'grid',
+    placeItems: 'center',
+  },
+  spinner: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    border: '3px solid rgba(255,255,255,0.1)',
+    borderTopColor: 'var(--accent-amber)',
+    animation: 'spin 0.8s linear infinite',
+  },
+
+  // Info strip below player
+  infoStrip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+    padding: '14px 18px',
+    borderRadius: '16px',
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid',
+    borderColor: 'rgba(255,255,255,0.08)',
+    transition: 'border-color 300ms ease',
+  },
+  infoStripText: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+    overflow: 'hidden',
+  },
+  infoStripName: {
+    color: 'var(--text-primary)',
+    fontSize: '1rem',
+    fontWeight: '700',
+    lineHeight: 1.2,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  infoStripCat: {
+    fontSize: '0.74rem',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: '0.1em',
+  },
+  infoStripRight: {
+    flexShrink: 0,
+  },
+  liveTag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '5px 10px',
+    borderRadius: '999px',
+    background: 'rgba(239,68,68,0.12)',
+    border: '1px solid rgba(239,68,68,0.25)',
+    color: '#ef4444',
+    fontSize: '0.68rem',
+    fontWeight: '800',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+  },
+
+  // Mobile category bar
+  mobileCatBar: {
+    overflow: 'hidden',
+  },
+  mobileCatScroll: {
+    display: 'flex',
+    gap: '8px',
+    overflowX: 'auto',
+    paddingBottom: '4px',
+    scrollbarWidth: 'none',
+    msOverflowStyle: 'none',
+  },
+
+  // Category chips
+  catPills: {
+    display: 'flex',
+    flexWrap: 'wrap',
     gap: '8px',
   },
-  nowPlayingLabel: {
-    fontSize: '0.72rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.14em',
-    color: 'var(--accent-cyan)',
-    fontWeight: '700',
-  },
-  nowPlayingTitle: {
-    color: 'var(--text-primary)',
-    fontSize: '1.25rem',
-  },
-  nowPlayingMeta: {
-    color: 'var(--text-secondary)',
-  },
-  diagnosticsCard: {
-    padding: '20px 24px',
-    borderRadius: '24px',
-    background: 'rgba(8,16,28,0.8)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    display: 'grid',
-    gap: '10px',
-  },
-  diagnosticsHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: '12px',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-  diagnosticsEyebrow: {
-    fontSize: '0.72rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.14em',
-    color: 'var(--text-muted)',
-    fontWeight: '700',
-  },
-  diagnosticsState: {
-    color: 'var(--text-primary)',
-    fontSize: '0.95rem',
-  },
-  diagnosticsMeta: {
-    display: 'grid',
-    gap: '4px',
-    color: 'var(--text-secondary)',
-    fontSize: '0.82rem',
-    wordBreak: 'break-all',
-  },
-  diagnosticsLog: {
-    margin: 0,
-    padding: '14px',
-    borderRadius: '16px',
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid rgba(255,255,255,0.06)',
-    color: '#d9e6ff',
-    fontSize: '0.8rem',
-    lineHeight: '1.5',
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
-    maxHeight: '220px',
-    overflow: 'auto',
-  },
-  listColumn: {
-    padding: '22px',
-    borderRadius: '30px',
-    background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))',
-    border: '1px solid rgba(255,255,255,0.08)',
-    boxShadow: 'var(--shadow-soft)',
-  },
-  listColumnMobile: {
-    padding: '16px',
-    borderRadius: '22px',
-  },
-  listHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: '12px',
-    alignItems: 'end',
-    marginBottom: '16px',
-  },
-  listEyebrow: {
-    display: 'inline-block',
-    marginBottom: '8px',
-    fontSize: '0.72rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.14em',
-    color: 'var(--text-muted)',
-    fontWeight: '700',
-  },
-  listTitle: {
-    color: 'var(--text-primary)',
-    fontSize: '1.6rem',
-  },
-  countBadge: {
-    padding: '8px 12px',
+  catChip: {
+    padding: '7px 13px',
     borderRadius: '999px',
-    background: 'rgba(255,255,255,0.08)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    background: 'rgba(255,255,255,0.05)',
     color: 'var(--text-secondary)',
-    fontSize: '0.8rem',
     fontWeight: '700',
+    fontSize: '0.78rem',
+    whiteSpace: 'nowrap',
+    transition: 'all 150ms ease',
+    minHeight: '34px',
   },
-  channelGrid: {
-    display: 'grid',
-    gap: '12px',
-    maxHeight: '760px',
-    overflowY: 'auto',
-    paddingRight: '4px',
+
+  // Sidebar
+  sidebar: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0',
+    borderRadius: '20px',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+    position: 'sticky',
+    top: '90px',
+    maxHeight: 'calc(100vh - 110px)',
   },
-  channelGridMobile: {
+  sidebarNarrow: {
+    position: 'static',
     maxHeight: 'none',
   },
-  channelCard: {
-    display: 'grid',
-    gridTemplateColumns: '88px minmax(0, 1fr)',
-    gap: '14px',
-    alignItems: 'center',
-    padding: '14px',
-    borderRadius: '22px',
-    border: '1px solid rgba(255,255,255,0.08)',
-    background: 'rgba(255,255,255,0.03)',
-    textAlign: 'left',
+  sidebarHidden: {
+    display: 'none',
   },
-  channelCardMobile: {
-    gridTemplateColumns: '72px minmax(0, 1fr)',
+  sidebarHeader: {
+    display: 'flex',
+    flexDirection: 'column',
     gap: '12px',
-    padding: '12px',
-    borderRadius: '18px',
+    padding: '16px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    background: 'rgba(255,255,255,0.02)',
+  },
+  sidebarSearch: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '10px 14px',
+    borderRadius: '12px',
+    background: 'rgba(6,14,24,0.7)',
+    border: '1px solid rgba(255,255,255,0.08)',
+  },
+  searchInput: {
+    flex: 1,
+    background: 'none',
+    border: 'none',
+    outline: 'none',
+    color: 'var(--text-primary)',
+    fontSize: '0.88rem',
+    minWidth: 0,
+  },
+  clearBtn: {
+    display: 'grid',
+    placeItems: 'center',
+    color: 'var(--text-muted)',
+    padding: '2px',
+    borderRadius: '4px',
+    minHeight: 'unset',
+    minWidth: 'unset',
+  },
+  sidebarMeta: {
+    display: 'flex',
+    gap: '6px',
+    alignItems: 'center',
+  },
+  sidebarMetaText: {
+    color: 'var(--text-muted)',
+    fontSize: '0.74rem',
+    fontWeight: '600',
+  },
+
+  // Channel list
+  channelList: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+
+  // Channel card
+  channelCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '10px 12px',
+    borderRadius: '14px',
+    border: '1px solid rgba(255,255,255,0.06)',
+    background: 'rgba(255,255,255,0.02)',
+    textAlign: 'left',
+    transition: 'all 150ms ease',
+    position: 'relative',
+    overflow: 'hidden',
+    minHeight: '64px',
   },
   channelCardActive: {
-    background: 'rgba(255, 200, 87, 0.1)',
-    borderColor: 'rgba(255, 200, 87, 0.42)',
-    boxShadow: '0 12px 28px rgba(255, 200, 87, 0.12)',
+    background: 'rgba(255,255,255,0.07)',
+    borderColor: 'rgba(255,255,255,0.14)',
   },
+  channelAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '3px',
+    borderRadius: '3px 0 0 3px',
+    opacity: 0.7,
+  },
+  channelInfo: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+    overflow: 'hidden',
+    minWidth: 0,
+  },
+  channelName: {
+    color: 'var(--text-primary)',
+    fontSize: '0.88rem',
+    fontWeight: '700',
+    lineHeight: 1.2,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  channelCat: {
+    fontSize: '0.7rem',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    lineHeight: 1.2,
+  },
+
+  // Logo
   logoBox: {
-    height: '58px',
-    borderRadius: '16px',
+    borderRadius: '10px',
     background: '#fff',
     display: 'grid',
     placeItems: 'center',
     overflow: 'hidden',
-    padding: '8px',
+    padding: '5px',
+    flexShrink: 0,
   },
-  channelLogo: {
+  logoImg: {
     width: '100%',
     height: '100%',
     objectFit: 'contain',
   },
-  channelInfo: {
-    display: 'grid',
-    gap: '6px',
+  logoInitials: {
+    fontWeight: '800',
+    color: '#07111f',
+    letterSpacing: '0.04em',
+    lineHeight: 1,
   },
-  channelName: {
-    color: 'var(--text-primary)',
-    fontSize: '0.96rem',
-    lineHeight: '1.4',
+
+  // Skeleton
+  skeletonCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '10px 12px',
+    borderRadius: '14px',
+    border: '1px solid rgba(255,255,255,0.05)',
   },
-  channelCategory: {
+  skeletonLogo: {
+    width: 42,
+    height: 42,
+    borderRadius: '10px',
+    background: 'rgba(255,255,255,0.07)',
+    flexShrink: 0,
+    animation: 'shimmer 1.4s linear infinite',
+    backgroundSize: '200% 100%',
+    backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.1), rgba(255,255,255,0.05))',
+  },
+  skeletonLines: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  skeletonLine: {
+    height: 13,
+    borderRadius: '999px',
+    background: 'rgba(255,255,255,0.07)',
+    animation: 'shimmer 1.4s linear infinite',
+    backgroundSize: '200% 100%',
+    backgroundImage: 'linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.1), rgba(255,255,255,0.05))',
+  },
+
+  // Empty state
+  emptyState: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '40px 20px',
+    textAlign: 'center',
+  },
+  emptyText: {
+    color: 'var(--text-muted)',
+    fontSize: '0.88rem',
+  },
+  emptyReset: {
+    padding: '8px 16px',
+    borderRadius: '999px',
+    background: 'rgba(255,255,255,0.07)',
+    border: '1px solid rgba(255,255,255,0.12)',
     color: 'var(--text-secondary)',
-    fontSize: '0.82rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
     fontWeight: '700',
+    fontSize: '0.82rem',
+    minHeight: 'unset',
   },
 };
-
-export default TVPage;

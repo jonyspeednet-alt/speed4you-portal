@@ -81,14 +81,19 @@ uses: actions/setup-node@v5
             set -e
             cd /home/${{ secrets.DEPLOY_USER }}/isp-portal-backend
             npm ci --omit=dev
-            cat > .env <<EOF
-            PORT=3001
-            JWT_SECRET=${JWT_SECRET}
-            TMDB_API_KEY=${TMDB_API_KEY}
-            EOF
+             cat > .env <<EOF
+             PORT=4100
+             JWT_SECRET=${JWT_SECRET}
+             TMDB_API_KEY=${TMDB_API_KEY}
+             EOF
 
             if command -v pm2 >/dev/null 2>&1; then
-              pm2 describe isp-portal-backend >/dev/null 2>&1 && pm2 restart isp-portal-backend || pm2 start src/index.js --name isp-portal-backend
+              # Use PM2 ecosystem config if available, otherwise start directly
+              if [ -f ecosystem.config.js ]; then
+                pm2 describe isp-portal-backend >/dev/null 2>&1 && pm2 restart ecosystem.config.js || pm2 start ecosystem.config.js
+              else
+                pm2 describe isp-portal-backend >/dev/null 2>&1 && pm2 restart isp-portal-backend || pm2 start src/index.js --name isp-portal-backend
+              fi
               pm2 save
             elif command -v systemctl >/dev/null 2>&1; then
               sudo systemctl restart isp-portal-backend || true

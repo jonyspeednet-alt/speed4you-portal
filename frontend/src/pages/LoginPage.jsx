@@ -11,6 +11,7 @@ function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [focusedField, setFocusedField] = useState(null);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -44,24 +45,38 @@ function LoginPage() {
           {error && <div style={styles.error}>{error}</div>}
 
           <div style={styles.field}>
-            <label style={styles.label}>Username</label>
+            <label style={styles.label} htmlFor="login-username">Username</label>
             <input
+              id="login-username"
               type="text"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              style={styles.input}
+              style={{
+                ...styles.input,
+                ...(focusedField === 'username' ? styles.inputFocused : {}),
+              }}
               placeholder="Enter username"
+              onFocus={() => setFocusedField('username')}
+              onBlur={() => setFocusedField(null)}
+              autoComplete="username"
             />
           </div>
 
           <div style={styles.field}>
-            <label style={styles.label}>Password</label>
+            <label style={styles.label} htmlFor="login-password">Password</label>
             <input
+              id="login-password"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              style={styles.input}
+              style={{
+                ...styles.input,
+                ...(focusedField === 'password' ? styles.inputFocused : {}),
+              }}
               placeholder="Enter password"
+              onFocus={() => setFocusedField('password')}
+              onBlur={() => setFocusedField(null)}
+              autoComplete="current-password"
             />
           </div>
 
@@ -162,15 +177,22 @@ const styles = {
     color: 'var(--text-primary)',
     fontSize: '1rem',
     outline: 'none',
+    transition: 'border-color 180ms ease, box-shadow 180ms ease',
+  },
+  inputFocused: {
+    borderColor: 'rgba(125,249,255,0.5)',
+    boxShadow: '0 0 0 3px rgba(125,249,255,0.1)',
   },
   submitBtn: {
     padding: '14px 24px',
     background: 'linear-gradient(135deg, var(--accent-red), #ff8a54)',
     color: '#fff',
     borderRadius: '16px',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: '1rem',
     marginTop: 'var(--spacing-sm)',
+    transition: 'opacity 150ms ease, transform 150ms ease, box-shadow 150ms ease',
+    boxShadow: '0 8px 24px rgba(255,90,95,0.28)',
   },
   backLink: {
     display: 'block',
@@ -178,6 +200,7 @@ const styles = {
     marginTop: 'var(--spacing-lg)',
     color: 'var(--text-muted)',
     fontSize: '0.9rem',
+    transition: 'color 150ms ease',
   },
 };
 

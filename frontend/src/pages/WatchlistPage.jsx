@@ -2,20 +2,15 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { watchlistService } from '../services';
 import { useBreakpoint } from '../hooks';
-
-const fallbackWatchlist = [
-  { id: 1, title: 'The Night Hunter', poster: 'https://images.unsplash.com/photo-1535016120720-40c646be5580?w=400', year: 2024, genre: 'Action', type: 'movie' },
-  { id: 2, title: 'City Lights', poster: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400', year: 2024, genre: 'Drama', type: 'movie' },
-  { id: 3, title: 'Ocean Deep', poster: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400', year: 2023, genre: 'Adventure', type: 'series' },
-  { id: 4, title: 'Mountain Echo', poster: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=400', year: 2024, genre: 'Thriller', type: 'movie' },
-  { id: 5, title: 'Silent Voices', poster: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=400', year: 2023, genre: 'Romance', type: 'series' },
-];
+import { CardSkeleton } from '../components/feedback/Skeleton';
+import WatchlistButton from '../components/ui/WatchlistButton';
 
 function WatchlistPage() {
   const { isMobile, isTablet } = useBreakpoint();
-  const [items, setItems] = useState(fallbackWatchlist);
+  const [items, setItems] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [hoveredFilter, setHoveredFilter] = useState(null);
 
   useEffect(() => {
     async function fetchWatchlist() {
@@ -25,10 +20,10 @@ function WatchlistPage() {
         if (Array.isArray(data?.items)) {
           setItems(data.items);
         } else {
-          setItems(fallbackWatchlist);
+          setItems([]);
         }
       } catch {
-        setItems(fallbackWatchlist);
+        setItems([]);
       } finally {
         setLoading(false);
       }
@@ -66,7 +61,10 @@ function WatchlistPage() {
               style={{
                 ...styles.filterBtn,
                 ...(filter === item ? styles.filterBtnActive : {}),
+                ...(hoveredFilter === item && filter !== item ? styles.filterBtnHover : {}),
               }}
+              onMouseEnter={() => setHoveredFilter(item)}
+              onMouseLeave={() => setHoveredFilter(null)}
             >
               {item === 'all' ? 'All' : item === 'movie' ? 'Movies' : 'Series'}
             </button>
@@ -75,16 +73,28 @@ function WatchlistPage() {
       </section>
 
       {loading ? (
-        <div style={styles.empty}>
-          <h2>Loading your list...</h2>
+        <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : {}) }}>
+          {Array.from({ length: 8 }).map((_, i) => <CardSkeleton key={i} />)}
         </div>
       ) : filteredItems.length === 0 ? (
         <div style={styles.emptyState}>
-          <h2 style={styles.emptyTitle}>Your list is still open for favorites.</h2>
-          <p>Save content from any details page and it will show up here with the same premium treatment.</p>
-          <Link to="/" style={styles.browseBtn}>
-            Browse Content
-          </Link>
+          <div style={styles.emptyIcon} aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />
+            </svg>
+          </div>
+          <h2 style={styles.emptyTitle}>
+            {filter === 'all' ? 'Your list is empty' : `No ${filter === 'movie' ? 'movies' : 'series'} saved yet`}
+          </h2>
+          <p style={styles.emptyText}>
+            {filter === 'all'
+              ? 'Browse movies and series, then tap the + button on any title to save it here.'
+              : `Switch to "All" or browse to find ${filter === 'movie' ? 'movies' : 'series'} to save.`}
+          </p>
+          <div style={styles.emptyActions}>
+            <Link to="/movies" style={styles.browseBtn}>Browse Movies</Link>
+            <Link to="/series" style={styles.browseBtnSecondary}>Browse Series</Link>
+          </div>
         </div>
       ) : (
         <div style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : {}) }}>
@@ -99,17 +109,28 @@ function WatchlistPage() {
                     <div style={styles.overlay} />
                     <span style={styles.rankBadge}>{String(index + 1).padStart(2, '0')}</span>
                     <span style={styles.typeBadge}>{item.type === 'series' ? 'Series' : 'Movie'}</span>
+                    {item.progress > 0 && (
+                      <div style={styles.progressBar}>
+                        <div style={{ ...styles.progressFill, width: `${Math.min(item.progress, 100)}%` }} />
+                      </div>
+                    )}
                   </div>
                   <div style={styles.info}>
-                    <h3 style={styles.cardTitle}>{item.title}</h3>
+                    <h3 style={{ ...styles.cardTitle, ...(isMobile ? styles.cardTitleMobile : {}) }}>{item.title}</h3>
                     <span style={styles.cardMeta}>{item.genre} • {item.year}</span>
+                    {item.progress > 0 && (
+                      <span style={styles.progressLabel}>{item.progress}% watched</span>
+                    )}
                   </div>
                 </Link>
                 <div style={{ ...styles.cardActions, ...(isMobile ? styles.cardActionsMobile : {}) }}>
                   <Link to={`/watch/${item.id}`} style={styles.quickPlayBtn}>
-                    Play
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                    <span>Play</span>
                   </Link>
-                  <button onClick={() => removeItem(item.id)} style={styles.removeBtn}>
+                  <button onClick={() => removeItem(item.id)} style={styles.removeBtn} aria-label={`Remove ${item.title} from list`}>
                     Remove
                   </button>
                 </div>
@@ -149,10 +170,6 @@ const styles = {
     padding: '18px',
     gridTemplateColumns: '1fr',
     gap: '18px',
-    position: 'sticky',
-    top: '78px',
-    zIndex: 20,
-    backdropFilter: 'blur(18px)',
   },
   kicker: {
     color: 'var(--accent-amber)',
@@ -162,7 +179,7 @@ const styles = {
     fontWeight: '700',
   },
   title: {
-    fontSize: 'clamp(2.4rem, 5vw, 4.4rem)',
+    fontSize: 'clamp(2rem, 5vw, 4.4rem)',
     color: 'var(--text-primary)',
     margin: '10px 0',
   },
@@ -191,6 +208,12 @@ const styles = {
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: '0.12em',
+    transition: 'background 150ms ease, color 150ms ease, border-color 150ms ease',
+  },
+  filterBtnHover: {
+    background: 'rgba(255,255,255,0.09)',
+    color: 'var(--text-primary)',
+    borderColor: 'rgba(255,255,255,0.14)',
   },
   filterBtnActive: {
     background: 'linear-gradient(135deg, var(--accent-red), #ff8a54)',
@@ -203,6 +226,10 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
     gap: '22px',
+  },
+  gridTablet: {
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: '16px',
   },
   gridMobile: {
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
@@ -269,6 +296,9 @@ const styles = {
     color: 'var(--text-primary)',
     marginBottom: '6px',
   },
+  cardTitleMobile: {
+    fontSize: '0.9rem',
+  },
   cardMeta: {
     fontSize: '0.84rem',
     color: 'var(--text-muted)',
@@ -283,12 +313,17 @@ const styles = {
   },
   quickPlayBtn: {
     flex: 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
     textAlign: 'center',
     padding: '12px 14px',
     borderRadius: '999px',
     background: 'linear-gradient(135deg, var(--accent-red), #ff8a54)',
     color: '#fff',
     fontWeight: '700',
+    fontSize: '0.88rem',
   },
   removeBtn: {
     padding: '12px 14px',
@@ -297,36 +332,86 @@ const styles = {
     border: '1px solid rgba(255,255,255,0.08)',
     color: 'var(--text-secondary)',
     fontWeight: '700',
+    fontSize: '0.88rem',
   },
-  empty: {
-    maxWidth: '1400px',
-    margin: '0 auto',
-    textAlign: 'center',
-    padding: 'var(--spacing-2xl)',
-    color: 'var(--text-muted)',
+  progressBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '4px',
+    background: 'rgba(255,255,255,0.18)',
+  },
+  progressFill: {
+    height: '100%',
+    background: 'linear-gradient(90deg, var(--accent-red), var(--accent-amber))',
+    borderRadius: '0 2px 2px 0',
+  },
+  progressLabel: {
+    fontSize: '0.76rem',
+    color: 'var(--accent-amber)',
+    fontWeight: '700',
   },
   emptyState: {
-    maxWidth: '860px',
+    maxWidth: '480px',
     margin: '0 auto',
     textAlign: 'center',
-    padding: 'var(--spacing-3xl) 24px',
+    padding: '56px 24px',
     borderRadius: '32px',
-    background: 'rgba(255,255,255,0.05)',
+    background: 'rgba(255,255,255,0.04)',
     border: '1px solid rgba(255,255,255,0.08)',
     boxShadow: 'var(--shadow-soft)',
+  },
+  emptyIcon: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '80px',
+    height: '80px',
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    margin: '0 auto 20px',
+    color: 'var(--text-muted)',
   },
   emptyTitle: {
     color: 'var(--text-primary)',
     marginBottom: '12px',
+    fontSize: '1.4rem',
+  },
+  emptyText: {
+    color: 'var(--text-secondary)',
+    lineHeight: '1.7',
+    marginBottom: '24px',
+    maxWidth: '36ch',
+    margin: '0 auto 24px',
+  },
+  emptyActions: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
   },
   browseBtn: {
-    display: 'inline-block',
-    marginTop: 'var(--spacing-lg)',
-    padding: '14px 24px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '13px 22px',
     background: 'linear-gradient(135deg, var(--accent-red), #ff8a54)',
     color: '#fff',
     borderRadius: '999px',
     fontWeight: '700',
+    fontSize: '0.9rem',
+  },
+  browseBtnSecondary: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '13px 22px',
+    background: 'rgba(255,255,255,0.07)',
+    border: '1px solid rgba(255,255,255,0.12)',
+    color: 'var(--text-primary)',
+    borderRadius: '999px',
+    fontWeight: '700',
+    fontSize: '0.9rem',
   },
 };
 

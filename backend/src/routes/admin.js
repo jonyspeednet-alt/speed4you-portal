@@ -14,6 +14,7 @@ const {
   getLibraryOrganization,
   listItems,
   loadScannerRoots,
+  pruneCatalog,
   updateItem,
 } = require('../data/store');
 const { getCurrentScanJob, getScannerHealth, startScanJob, stopScanJob } = require('../services/scanner');
@@ -58,7 +59,15 @@ function resolveUploadDirectory() {
   return path.resolve(__dirname, '../../../frontend/public/uploads');
 }
 
+const ALLOWED_UPLOAD_FOLDERS = new Set(['images', 'posters', 'backdrops', 'avatars']);
+
+function sanitizeUploadFolder(folder) {
+  const safe = String(folder || 'images').replace(/[^a-z0-9_-]/gi, '');
+  return ALLOWED_UPLOAD_FOLDERS.has(safe) ? safe : 'images';
+}
+
 function saveDataUrlAsset(dataUrl, folder = 'images') {
+  folder = sanitizeUploadFolder(folder);
   const match = String(dataUrl || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
   if (!match) {
     throw new Error('Invalid image payload.');
@@ -97,6 +106,7 @@ function saveDataUrlAsset(dataUrl, folder = 'images') {
 }
 
 function saveBufferAsset(file, folder = 'images') {
+  folder = sanitizeUploadFolder(folder);
   const mimeType = String(file?.mimetype || '').toLowerCase();
   const extensionMap = {
     'image/jpeg': '.jpg',
@@ -130,6 +140,8 @@ function saveBufferAsset(file, folder = 'images') {
 }
 
 function toSummaryItem(item) {
+  const poster = item.poster || item.backdrop || item.thumbnail || '';
+
   return {
     id: item.id,
     title: item.title,
@@ -153,7 +165,8 @@ function toSummaryItem(item) {
     featuredOrder: Number(item.featuredOrder || 0),
     trendingScore: Number(item.trendingScore || 0),
     adminNotes: item.adminNotes || '',
-    poster: item.poster || '',
+    poster,
+    backdrop: item.backdrop || item.poster || '',
     videoUrl: item.videoUrl || '',
     updatedAt: item.updatedAt || '',
   };
@@ -188,10 +201,13 @@ router.get('/stats', asyncRoute(async (req, res) => {
 }));
 
 router.get('/content', asyncRoute(async (req, res) => {
-  const { status, type, source, sourceRootId, language, category, collection, tag, search, page, limit, summary, duplicatesOnly } = req.query;
+  const { status, type, source, sourceRootId, language, category, collection, tag, search, sort, page, limit, summary, duplicatesOnly } = req.query;
   const pageNum = Number(page) || 1;
   const limitNum = Number(limit) || 50;
   const offset = (pageNum - 1) * limitNum;
+  // Pass includeDuplicates=false — duplicateCount/duplicateCandidates are already
+  // stored in each item's payload, so re-computing them for every page list adds
+  // an expensive extra query with no benefit for the admin listing view.
   const result = await listItems({
     status,
     type,
@@ -203,7 +219,7 @@ router.get('/content', asyncRoute(async (req, res) => {
     tag,
     search,
     duplicatesOnly: String(duplicatesOnly) === 'true',
-  }, offset, limitNum);
+  }, offset, limitNum, sort || 'latest', false);
   res.json(withSummaryResult(result, String(summary) === 'true'));
 }));
 
@@ -259,6 +275,10 @@ router.post('/content/bulk-update', asyncRoute(async (req, res) => {
     updatedCount: updated.length,
     items: updated,
   });
+}));
+
+router.post('/maintenance/prune', asyncRoute(async (req, res) => {
+  res.json(await pruneCatalog());
 }));
 
 router.delete('/content/:id', asyncRoute(async (req, res) => {
@@ -437,6 +457,171 @@ router.post('/metadata/tmdb', asyncRoute(async (req, res) => {
   } catch (error) {
     return res.status(400).json({ error: error.message || 'TMDb import failed.' });
   }
+}));
+
+router.post('/seed-test-data', asyncRoute(async (req, res) => {
+  const SAMPLE_MOVIES = [
+    {
+      id: 1001,
+      title: 'The Journey Begins',
+      type: 'movie',
+      status: 'published',
+      genre: 'Action',
+      year: 2024,
+      language: 'English',
+      poster: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400',
+      backdrop: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1200',
+      rating: 8.2,
+      duration: 142,
+      description: 'An epic adventure film filled with action and mystery.',
+      director: 'John Smith',
+      cast: ['Tom Hardy', 'Emma Stone'],
+    },
+    {
+      id: 1002,
+      title: 'Heart of Gold',
+      type: 'movie',
+      status: 'published',
+      genre: 'Drama',
+      year: 2023,
+      language: 'English',
+      poster: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=400',
+      backdrop: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=1200',
+      rating: 7.9,
+      duration: 128,
+      description: 'A touching story about love, loss, and redemption.',
+      director: 'Sarah Johnson',
+      cast: ['Saoirse Ronan', 'Timothée Chalamet'],
+    },
+    {
+      id: 1003,
+      title: 'Laugh Track',
+      type: 'movie',
+      status: 'published',
+      genre: 'Comedy',
+      year: 2024,
+      language: 'English',
+      poster: 'https://images.unsplash.com/photo-1495997622626-f1fbb8e068aa?w=400',
+      backdrop: 'https://images.unsplash.com/photo-1495997622626-f1fbb8e068aa?w=1200',
+      rating: 7.1,
+      duration: 95,
+      description: 'A hilarious comedy about everyday life mishaps.',
+      director: 'Michael Chen',
+      cast: ['Will Ferrell', 'Amy Poehler'],
+    },
+    {
+      id: 1004,
+      title: 'Midnight Terror',
+      type: 'movie',
+      status: 'published',
+      genre: 'Horror',
+      year: 2024,
+      language: 'English',
+      poster: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400',
+      backdrop: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1200',
+      rating: 7.4,
+      duration: 105,
+      description: 'A chilling horror experience that will keep you on edge.',
+      director: 'Alex Rivera',
+      cast: ['Jennifer Connelly', 'Tom Hardy'],
+    },
+    {
+      id: 1005,
+      title: 'Love in Paris',
+      type: 'movie',
+      status: 'published',
+      genre: 'Romance',
+      year: 2023,
+      language: 'French',
+      poster: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=400',
+      backdrop: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=1200',
+      rating: 8.0,
+      duration: 112,
+      description: 'A romantic tale set in the city of love.',
+      director: 'François Truffaut',
+      cast: ['Léa Seydoux', 'Vincent Cassel'],
+    },
+  ];
+
+  const SAMPLE_SERIES = [
+    {
+      id: 2001,
+      title: 'Tech Titans',
+      type: 'series',
+      status: 'published',
+      genre: 'Thriller',
+      year: 2024,
+      language: 'English',
+      poster: 'https://images.unsplash.com/photo-1574609644844-fcf46c1e1e2c?w=400',
+      backdrop: 'https://images.unsplash.com/photo-1574609644844-fcf46c1e1e2c?w=1200',
+      rating: 8.5,
+      seasons: 2,
+      episodes: 24,
+      description: 'Follow the rise of ambitious tech entrepreneurs in Silicon Valley.',
+      creator: 'David Fincher',
+      cast: ['Adam Scott', 'Tracee Ellis Ross'],
+    },
+    {
+      id: 2002,
+      title: 'Mystery Island',
+      type: 'series',
+      status: 'published',
+      genre: 'Adventure',
+      year: 2023,
+      language: 'English',
+      poster: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400',
+      backdrop: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=1200',
+      rating: 8.3,
+      seasons: 1,
+      episodes: 10,
+      description: 'A group of friends must solve the mysteries of an uncharted island.',
+      creator: 'J.J. Abrams',
+      cast: ['Oscar Isaac', 'Elizabeth Olsen'],
+    },
+    {
+      id: 2003,
+      title: 'Legal Minds',
+      type: 'series',
+      status: 'published',
+      genre: 'Drama',
+      year: 2024,
+      language: 'English',
+      poster: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400',
+      backdrop: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1200',
+      rating: 8.1,
+      seasons: 3,
+      episodes: 36,
+      description: 'High-stakes legal battles and personal drama in a prestigious law firm.',
+      creator: 'Peter Nowalk',
+      cast: ['Viola Davis', 'Alfred Enoch'],
+    },
+  ];
+
+  const results = { movies: [], series: [], errors: [] };
+
+  for (const movie of SAMPLE_MOVIES) {
+    try {
+      await createItem(movie);
+      results.movies.push(movie.title);
+    } catch (err) {
+      results.errors.push(`Failed to add movie ${movie.title}: ${err.message}`);
+    }
+  }
+
+  for (const series of SAMPLE_SERIES) {
+    try {
+      await createItem(series);
+      results.series.push(series.title);
+    } catch (err) {
+      results.errors.push(`Failed to add series ${series.title}: ${err.message}`);
+    }
+  }
+
+  res.json({
+    ok: true,
+    message: 'Test data seeding complete',
+    results,
+  });
 }));
 
 module.exports = router;

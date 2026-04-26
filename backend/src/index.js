@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
 const { getScannerHealth } = require('./services/scanner');
@@ -13,12 +14,17 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
 const nodeEnv = String(process.env.NODE_ENV || 'development').toLowerCase();
+const isProduction = nodeEnv === 'production';
 const corsOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
 
-if ((nodeEnv === 'production' || process.env.REQUIRE_CORS_ALLOWLIST === '1') && !corsOrigins.length) {
+// The production deployment sits behind nginx, so Express must trust the
+// first proxy hop for client IP and rate limiting to work correctly.
+app.set('trust proxy', true);
+
+if ((isProduction || process.env.REQUIRE_CORS_ALLOWLIST === '1') && !corsOrigins.length) {
   throw new Error('CORS_ALLOWED_ORIGINS must be configured in production.');
 }
 
@@ -58,19 +64,64 @@ app.use(helmet({
       objectSrc: ["'none'"],
       scriptSrc: ["'self'"],
       scriptSrcAttr: ["'none'"],
-      styleSrc: ["'self'", 'https:', "'unsafe-inline'"],
+      // Removed 'unsafe-inline' — use hashed styles or external stylesheets instead
+      styleSrc: ["'self'", 'https:'],
       workerSrc: ["'self'", 'blob:'],
       connectSrc: ["'self'", ...corsOrigins],
-      upgradeInsecureRequests: [],
     },
   },
+  // Enforce HTTPS in production
+  hsts: isProduction ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
 }));
+
+// Global rate limiter — broad protection against abuse on all API routes
+const GLOBAL_API_LIMIT = Number(process.env.GLOBAL_API_RATE_LIMIT_MAX || 5000);
+const PUBLIC_API_LIMIT = Number(process.env.PUBLIC_API_RATE_LIMIT_MAX || 20000);
+
+function isReadOnlyPublicApiRequest(req) {
+  if (!['GET', 'HEAD'].includes(String(req.method || '').toUpperCase())) {
+    return false;
+  }
+
+  return [
+    '/api/content',
+    '/api/movies',
+    '/api/series',
+    '/api/search',
+    '/api/tv',
+  ].some((prefix) => req.path.startsWith(prefix));
+}
+
+const globalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: GLOBAL_API_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+  skip: (req) =>
+    !req.path.startsWith('/api/')
+    || isReadOnlyPublicApiRequest(req)
+    || req.ip === '127.0.0.1'
+    || req.ip === '::1',
+});
+
+// Stricter limiter for public content endpoints (unauthenticated)
+const publicContentLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: PUBLIC_API_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+  skip: (req) => req.ip === '127.0.0.1' || req.ip === '::1',
+});
+
 app.use(compressionMiddleware);
 app.use(cors({
   origin: buildCorsOriginChecker(),
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
-app.use(morgan('dev'));
+app.use(globalApiLimiter);
+app.use(morgan(isProduction ? 'combined' : 'dev'));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use((req, res, next) => {
@@ -88,14 +139,14 @@ app.get('/health/scanner', (req, res) => {
 });
 
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/content', require('./routes/content'));
-app.use('/api/movies', require('./routes/movies'));
-app.use('/api/series', require('./routes/series'));
-app.use('/api/search', require('./routes/search'));
+app.use('/api/content', publicContentLimiter, require('./routes/content'));
+app.use('/api/movies', publicContentLimiter, require('./routes/movies'));
+app.use('/api/series', publicContentLimiter, require('./routes/series'));
+app.use('/api/search', publicContentLimiter, require('./routes/search'));
 app.use('/api/watchlist', require('./routes/watchlist'));
 app.use('/api/progress', require('./routes/progress'));
 app.use('/api/player', require('./routes/player'));
-app.use('/api/tv', require('./routes/tv'));
+app.use('/api/tv', publicContentLimiter, require('./routes/tv'));
 app.use('/api/admin', require('./routes/admin'));
 
 if (fs.existsSync(frontendDistPath)) {
@@ -138,22 +189,31 @@ app.use((req, res, next) => {
   return next();
 });
 
+// Global error handler — never leak stack traces in production
 app.use((err, req, res, next) => {
-  console.error(err.stack);
   const isPayloadTooLarge = err?.code === 'LIMIT_FILE_SIZE';
   const statusCode = Number(err.status || err.statusCode || (isPayloadTooLarge ? 413 : 500));
+
+  // Always log the full error server-side
+  if (statusCode >= 500) {
+    console.error(`[${req.requestId}] Unhandled error:`, err);
+  }
+
   const code = isPayloadTooLarge
     ? 'PAYLOAD_TOO_LARGE'
     : (err.code || (statusCode === 400 ? 'BAD_REQUEST' : statusCode === 401 ? 'UNAUTHORIZED' : statusCode === 403 ? 'FORBIDDEN' : statusCode === 404 ? 'NOT_FOUND' : 'INTERNAL_SERVER_ERROR'));
   const message = isPayloadTooLarge
     ? 'Uploaded file exceeds configured size limit'
     : (err.message || 'Internal Server Error');
+
   res.status(statusCode).json({
     ok: false,
     error: {
       code,
       message,
       details: Array.isArray(err.details) ? err.details : undefined,
+      // Never expose stack traces in production
+      ...(isProduction ? {} : { stack: err.stack }),
     },
     requestId: req.requestId || '',
   });
@@ -163,7 +223,7 @@ async function startServer() {
   await ensureContentStore();
 
   app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT} [${nodeEnv}]`);
   });
 }
 

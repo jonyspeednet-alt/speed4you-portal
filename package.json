@@ -6,5 +6,20 @@
     "build": "npm --prefix frontend run build",
     "dev": "node scripts/dev-runner.cjs",
     "start": "node scripts/start-runner.cjs"
-  }
+  },
+  "version": "1.0.0",
+  "description": "[![GitHub Repo stars](https://img.shields.io/github/stars/jonyspeednet-alt/isp-entertainment-portal?style=social)](https://github.com/jonyspeednet-alt/isp-entertainment-portal)\r [![GitHub last commit](https://img.shields.io/github/last-commit/jonyspeednet-alt/isp-entertainment-portal)](https://github.com/jonyspeednet-alt/isp-entertainment-portal/commits/main)\r [![GitHub Issues](https://img.shields.io/github/issues/jonyspeednet-alt/isp-entertainment-portal)](https://github.com/jonyspeednet-alt/isp-entertainment-portal/issues)\r [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)",
+  "main": "tmp-list-roots.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonyspeednet-alt/isp-entertainment-portal-v2.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jonyspeednet-alt/isp-entertainment-portal-v2/issues"
+  },
+  "homepage": "https://github.com/jonyspeednet-alt/isp-entertainment-portal-v2#readme"
 }

@@ -24,6 +24,9 @@ const VIDEO_EXTENSIONS = new Set(
     .filter(Boolean),
 );
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const MIN_MOVIE_SIZE = Number(process.env.SCANNER_MIN_MOVIE_SIZE || 104857600); // 100MB
+const MIN_EPISODE_SIZE = Number(process.env.SCANNER_MIN_EPISODE_SIZE || 31457280); // 30MB
+const JUNK_REGEX = /sample|trailer|extras|promo|short|clip|preview|teaser/i;
 const DUPLICATE_HOLD_DIR_NAME = process.env.MEDIA_NORMALIZER_DUPLICATE_DIR || '_duplicate_hold';
 const PREFERRED_POSTER_PATTERNS = [
   /^(poster|cover|folder|front)$/i,
@@ -140,8 +143,11 @@ function parseEpisodeIdentity(filename) {
   const input = String(filename || '');
   const basename = cleanTitle(path.basename(input, path.extname(input)));
 
+  // S01E01, Season 1 Episode 1, etc.
   const seasonEpisodeMatch = basename.match(/\bS(?:eason)?\s*(\d{1,2})\s*[-_. ]*E(?:p(?:isode)?)?\s*(\d{1,3})\b/i)
-    || basename.match(/\b(\d{1,2})x(\d{1,3})\b/i);
+    || basename.match(/\b(\d{1,2})x(\d{1,3})\b/i)
+    || basename.match(/\bS(\d{1,2})\s*(\d{2,3})\b/i); // S101 or S0101
+  
   if (seasonEpisodeMatch) {
     return {
       season: Number(seasonEpisodeMatch[1]),
@@ -149,8 +155,11 @@ function parseEpisodeIdentity(filename) {
     };
   }
 
+  // Episode 1, E01, Ep 1, [01], - 01 -
   const episodeOnlyMatch = basename.match(/\bE(?:p(?:isode)?)?\s*(\d{1,3})\b/i)
     || basename.match(/\bEpisode\s*(\d{1,3})\b/i)
+    || basename.match(/\[(\d{1,3})\]/)
+    || basename.match(/\s*-\s*(\d{1,3})\s*-\s*/)
     || basename.match(/(?:^|[^\d])(\d{1,3})(?:[^\d]|$)(?!.*\d)/);
 
   if (episodeOnlyMatch) {
@@ -418,8 +427,33 @@ function pickVideo(root, folderPath, files) {
   return toPublicUrl(root, path.join(folderPath, candidate));
 }
 
-function listVideoFiles(files) {
-  return files.filter((file) => VIDEO_EXTENSIONS.has(path.extname(file).toLowerCase()));
+function isValidMediaFile(filePath, contentType = 'movie') {
+  const filename = path.basename(filePath);
+  const ext = path.extname(filename).toLowerCase();
+
+  if (!VIDEO_EXTENSIONS.has(ext)) {
+    return false;
+  }
+
+  if (JUNK_REGEX.test(filename)) {
+    return false;
+  }
+
+  try {
+    const stats = fs.statSync(filePath);
+    const minSize = contentType === 'series' ? MIN_EPISODE_SIZE : MIN_MOVIE_SIZE;
+    if (stats.size < minSize) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
+function listVideoFiles(files, dirPath, contentType = 'movie') {
+  return files.filter((file) => isValidMediaFile(path.join(dirPath, file), contentType));
 }
 
 function isYearFolderName(value) {
@@ -440,7 +474,7 @@ function shouldExpandMovieFolder(relativeFolder, folderName, videoFiles) {
 
 function buildMovieCandidates(root, folderPath, relativeFolder, files) {
   const folderName = path.basename(folderPath);
-  const videoFiles = listVideoFiles(files);
+  const videoFiles = listVideoFiles(files, folderPath, 'movie');
 
   if (!videoFiles.length) {
     return [];
@@ -788,7 +822,8 @@ async function processSeriesRoot(root, summary, progressCallback, scanContext) {
       if (seasonFolderNames.length) {
         for (const [seasonIndex, seasonName] of seasonFolderNames.entries()) {
           const seasonPath = path.join(seriesPath, seasonName);
-          const episodeFiles = listFiles(seasonPath).filter((file) => VIDEO_EXTENSIONS.has(path.extname(file).toLowerCase()));
+          const seasonFiles = listFiles(seasonPath);
+          const episodeFiles = listVideoFiles(seasonFiles, seasonPath, 'series');
 
           if (!episodeFiles.length) {
             continue;
@@ -805,7 +840,7 @@ async function processSeriesRoot(root, summary, progressCallback, scanContext) {
           });
         }
       } else {
-        const episodeFiles = seriesFiles.filter((file) => VIDEO_EXTENSIONS.has(path.extname(file).toLowerCase()));
+        const episodeFiles = listVideoFiles(seriesFiles, seriesPath, 'series');
 
         if (episodeFiles.length) {
           const seriesSlug = slugify(folderName);
@@ -1033,6 +1068,18 @@ async function scanSelectedRoots(selectedRootIds = [], progressCallback, options
 function attachChildHandlers(child) {
   currentScanChild = child;
 
+  child.on('error', (err) => {
+    currentScanJob = {
+      ...currentScanJob,
+      status: 'failed',
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      error: `Scanner worker error: ${err.message}`,
+    };
+    void updateRuntimeJob(currentScanJob);
+    currentScanChild = null;
+  });
+
   child.on('message', (message) => {
     if (message?.type === 'progress') {
       currentScanJob = {
@@ -1108,14 +1155,28 @@ function startScanJob(selectedRootIds = []) {
   void updateRuntimeJob(currentScanJob);
 
   const workerPath = path.resolve(__dirname, 'scanner-worker.js');
-  const child = fork(workerPath, [], {
-    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-    env: {
-      ...process.env,
-      SCANNER_ROOT_IDS: JSON.stringify(rootIds),
-      SCANNER_RUN_ID: currentScanJob.id,
-    },
-  });
+
+  let child;
+  try {
+    child = fork(workerPath, [], {
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      env: {
+        ...process.env,
+        SCANNER_ROOT_IDS: JSON.stringify(rootIds),
+        SCANNER_RUN_ID: currentScanJob.id,
+      },
+    });
+  } catch (err) {
+    currentScanJob = {
+      ...currentScanJob,
+      status: 'failed',
+      completedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      error: `Failed to start scanner worker: ${err.message}`,
+    };
+    void updateRuntimeJob(currentScanJob);
+    return currentScanJob;
+  }
 
   attachChildHandlers(child);
   return currentScanJob;

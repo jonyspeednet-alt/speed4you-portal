@@ -63,22 +63,26 @@ router.get('/', validateQuery(searchQuerySchema), async (req, res, next) => {
   }
 });
 
-router.get('/suggestions', async (req, res) => {
-  const q = normalizeQueryValue(req.query.q);
-  if (!q || q.length < 2) {
-    return res.json({ items: [] });
+router.get('/suggestions', async (req, res, next) => {
+  try {
+    const q = normalizeQueryValue(req.query.q);
+    if (!q || q.length < 2) {
+      return res.json({ items: [] });
+    }
+    return res.json({ items: await getSuggestions(q, 10) });
+  } catch (error) {
+    next(error);
   }
-
-  return res.json({ items: await getSuggestions(q, 10) });
 });
 
-router.get('/recent', (req, res) => {
-  const userId = resolveUserId(req);
-  getRecentSearches(userId, 10)
-    .then((items) => res.json({ items }))
-    .catch((error) => {
-      res.status(500).json({ error: error.message || 'Unable to load recent searches' });
-    });
+router.get('/recent', async (req, res) => {
+  try {
+    const userId = resolveUserId(req);
+    const items = await getRecentSearches(userId, 10);
+    res.json({ items });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Unable to load recent searches' });
+  }
 });
 
 module.exports = router;

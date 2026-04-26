@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('../config/database');
+const { runMigrations } = require('./migrations');
 
 const catalogPath = path.resolve(__dirname, 'catalog.json');
 const scannerRootsPath = path.resolve(__dirname, 'scanner-roots.json');
@@ -10,6 +11,9 @@ const scannerRuntimePath = path.resolve(__dirname, 'scanner-runtime.json');
 const MAX_SCANNER_RUNS = 30;
 const NODE_ENV = String(process.env.NODE_ENV || 'development').toLowerCase();
 const IS_PRODUCTION = NODE_ENV === 'production';
+const MIN_MOVIE_SIZE = Number(process.env.SCANNER_MIN_MOVIE_SIZE || 104857600); // 100MB
+const MIN_EPISODE_SIZE = Number(process.env.SCANNER_MIN_EPISODE_SIZE || 31457280); // 30MB
+const JUNK_REGEX = /sample|trailer|extras|promo|short|clip|preview|teaser/i;
 const DEFAULT_ADMIN_USERNAME = process.env.ADMIN_USERNAME || (IS_PRODUCTION ? '' : 'admin');
 const DEFAULT_ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || (IS_PRODUCTION ? '' : '$2a$10$ejyljPiCt5J0tvO68DS99OnzyystXkHwgn9pN44txXcxGs/XLlKtK');
 const APP_STATE_DEFAULTS = {
@@ -21,6 +25,133 @@ const APP_STATE_DEFAULTS = {
   media_normalizer_log: { lines: [] },
 };
 const appStateCache = new Map();
+const DEVELOPMENT_SEED_ITEMS = [
+  {
+    id: 1001,
+    title: 'The Journey Begins',
+    type: 'movie',
+    status: 'published',
+    genre: 'Action',
+    year: 2024,
+    language: 'English',
+    poster: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400',
+    backdrop: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1200',
+    rating: 8.2,
+    duration: 142,
+    description: 'An epic adventure film filled with action and mystery.',
+    featured: true,
+    featuredOrder: 10,
+    trendingScore: 95,
+  },
+  {
+    id: 1002,
+    title: 'Heart of Gold',
+    type: 'movie',
+    status: 'published',
+    genre: 'Drama',
+    year: 2023,
+    language: 'English',
+    poster: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=400',
+    backdrop: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=1200',
+    rating: 7.9,
+    duration: 128,
+    description: 'A touching story about love, loss, and redemption.',
+    trendingScore: 84,
+  },
+  {
+    id: 1003,
+    title: 'Laugh Track',
+    type: 'movie',
+    status: 'published',
+    genre: 'Comedy',
+    year: 2024,
+    language: 'English',
+    poster: 'https://images.unsplash.com/photo-1495997622626-f1fbb8e068aa?w=400',
+    backdrop: 'https://images.unsplash.com/photo-1495997622626-f1fbb8e068aa?w=1200',
+    rating: 7.1,
+    duration: 95,
+    description: 'A hilarious comedy about everyday life mishaps.',
+    trendingScore: 71,
+  },
+  {
+    id: 1004,
+    title: 'Midnight Terror',
+    type: 'movie',
+    status: 'published',
+    genre: 'Horror',
+    year: 2024,
+    language: 'English',
+    poster: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400',
+    backdrop: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1200',
+    rating: 7.4,
+    duration: 105,
+    description: 'A chilling horror experience that will keep you on edge.',
+    trendingScore: 77,
+  },
+  {
+    id: 1005,
+    title: 'Love in Paris',
+    type: 'movie',
+    status: 'published',
+    genre: 'Romance',
+    year: 2023,
+    language: 'French',
+    poster: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=400',
+    backdrop: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=1200',
+    rating: 8,
+    duration: 112,
+    description: 'A romantic tale set in the city of love.',
+    trendingScore: 68,
+  },
+  {
+    id: 2001,
+    title: 'Tech Titans',
+    type: 'series',
+    status: 'published',
+    genre: 'Thriller',
+    year: 2024,
+    language: 'English',
+    poster: 'https://images.unsplash.com/photo-1574609644844-fcf46c1e1e2c?w=400',
+    backdrop: 'https://images.unsplash.com/photo-1574609644844-fcf46c1e1e2c?w=1200',
+    rating: 8.5,
+    description: 'Follow the rise of ambitious tech entrepreneurs in Silicon Valley.',
+    seasons: 2,
+    episodes: 24,
+    trendingScore: 98,
+  },
+  {
+    id: 2002,
+    title: 'Mystery Island',
+    type: 'series',
+    status: 'published',
+    genre: 'Adventure',
+    year: 2023,
+    language: 'English',
+    poster: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400',
+    backdrop: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=1200',
+    rating: 8.3,
+    description: 'A group of friends must solve the mysteries of an uncharted island.',
+    seasons: 1,
+    episodes: 10,
+    trendingScore: 86,
+  },
+  {
+    id: 2003,
+    title: 'Legal Minds',
+    type: 'series',
+    status: 'published',
+    genre: 'Drama',
+    year: 2024,
+    language: 'English',
+    poster: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400',
+    backdrop: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1200',
+    rating: 8.1,
+    description: 'High-stakes legal battles and personal drama in a prestigious law firm.',
+    seasons: 3,
+    episodes: 36,
+    trendingScore: 83,
+  },
+];
 
 function shouldImportLegacyState(key, currentValue, fallbackValue) {
   if (currentValue === null || currentValue === undefined) {
@@ -64,7 +195,6 @@ let contentStoreReadyPromise = null;
 async function ensureContentStore() {
   if (!contentStoreReadyPromise) {
     contentStoreReadyPromise = (async () => {
-      await db.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
       await db.query(`
         CREATE TABLE IF NOT EXISTS content_catalog (
           id BIGINT PRIMARY KEY,
@@ -73,14 +203,37 @@ async function ensureContentStore() {
           updated_at TIMESTAMPTZ DEFAULT NOW()
         )
       `);
-      await db.query('CREATE INDEX IF NOT EXISTS idx_content_catalog_payload_gin ON content_catalog USING GIN (payload)');
-      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_status ON content_catalog ((payload->>'status'))");
-      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_type ON content_catalog ((payload->>'type'))");
-      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_genre ON content_catalog ((payload->>'genre'))");
-      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_language ON content_catalog ((payload->>'language'))");
-      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_collection ON content_catalog ((payload->>'collection'))");
-      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_search ON content_catalog USING GIN (LOWER(COALESCE(payload->>'title', '') || ' ' || COALESCE(payload->>'genre', '') || ' ' || COALESCE(payload->>'language', '') || ' ' || COALESCE(payload->>'category', '') || ' ' || COALESCE(payload->>'description', '') || ' ' || COALESCE(payload->>'originalTitle', '') || ' ' || COALESCE(payload->>'year', '')) gin_trgm_ops)");
-      
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'draft'`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS content_type TEXT NOT NULL DEFAULT 'movie'`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS title_key TEXT NOT NULL DEFAULT ''`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT ''`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT ''`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS collection TEXT NOT NULL DEFAULT ''`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'manual'`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS source_root_id TEXT NOT NULL DEFAULT ''`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS last_scan_run_id TEXT NOT NULL DEFAULT ''`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS year INT`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS rating NUMERIC(4,2)`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS featured BOOLEAN NOT NULL DEFAULT FALSE`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS featured_order INT NOT NULL DEFAULT 0`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS trending_score INT NOT NULL DEFAULT 0`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS duplicate_count INT NOT NULL DEFAULT 0`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS metadata_status TEXT NOT NULL DEFAULT 'pending'`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ`);
+      await db.query(`ALTER TABLE content_catalog ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ`);
+      if (!db.isInMemory) {
+        await db.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+        await db.query('CREATE INDEX IF NOT EXISTS idx_content_catalog_payload_gin ON content_catalog USING GIN (payload)');
+        await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_search ON content_catalog USING GIN (LOWER(COALESCE(payload->>'title', '') || ' ' || COALESCE(payload->>'genre', '') || ' ' || COALESCE(payload->>'language', '') || ' ' || COALESCE(payload->>'category', '') || ' ' || COALESCE(payload->>'description', '') || ' ' || COALESCE(payload->>'originalTitle', '') || ' ' || COALESCE(payload->>'year', '')) gin_trgm_ops)");
+      }
+      await db.query('CREATE INDEX IF NOT EXISTS idx_content_catalog_status ON content_catalog (status)');
+      await db.query('CREATE INDEX IF NOT EXISTS idx_content_catalog_type ON content_catalog (content_type)');
+      await db.query('CREATE INDEX IF NOT EXISTS idx_content_catalog_language ON content_catalog (language)');
+      await db.query('CREATE INDEX IF NOT EXISTS idx_content_catalog_collection ON content_catalog (collection)');
+      await db.query('CREATE INDEX IF NOT EXISTS idx_content_catalog_duplicates ON content_catalog (content_type, title_key)');
+      await db.query("CREATE INDEX IF NOT EXISTS idx_content_catalog_updated_at ON content_catalog (updated_at DESC)");
+
       await db.query(`
         CREATE TABLE IF NOT EXISTS app_state (
           key TEXT PRIMARY KEY,
@@ -130,6 +283,44 @@ async function ensureContentStore() {
           UNIQUE (user_id, content_type, content_id)
         )
       `);
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS scanner_roots (
+          id TEXT PRIMARY KEY,
+          label TEXT NOT NULL DEFAULT '',
+          scan_path TEXT NOT NULL DEFAULT '',
+          public_base_url TEXT NOT NULL DEFAULT '',
+          type TEXT NOT NULL DEFAULT 'movie',
+          language TEXT NOT NULL DEFAULT '',
+          category TEXT NOT NULL DEFAULT '',
+          max_depth INT,
+          batch_size INT,
+          enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          discovered BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS scanner_runs (
+          id TEXT PRIMARY KEY,
+          status TEXT NOT NULL DEFAULT 'completed',
+          started_at TIMESTAMPTZ,
+          completed_at TIMESTAMPTZ,
+          root_ids JSONB NOT NULL DEFAULT '[]',
+          roots_requested INT NOT NULL DEFAULT 0,
+          roots_scanned INT NOT NULL DEFAULT 0,
+          total_created INT NOT NULL DEFAULT 0,
+          total_updated INT NOT NULL DEFAULT 0,
+          total_deleted INT NOT NULL DEFAULT 0,
+          total_unchanged INT NOT NULL DEFAULT 0,
+          total_duplicate_drafts INT NOT NULL DEFAULT 0,
+          skipped JSONB NOT NULL DEFAULT '[]',
+          errors JSONB NOT NULL DEFAULT '[]',
+          root_results JSONB NOT NULL DEFAULT '[]',
+          error TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
       if (IS_PRODUCTION && (!DEFAULT_ADMIN_USERNAME || !DEFAULT_ADMIN_PASSWORD_HASH)) {
         throw new Error('ADMIN_USERNAME and ADMIN_PASSWORD_HASH must be configured in production.');
       }
@@ -151,15 +342,60 @@ async function ensureContentStore() {
       const countResult = await db.query('SELECT COUNT(*)::int AS count FROM content_catalog');
       if (Number(countResult.rows[0]?.count || 0) === 0) {
         const legacyCatalog = readJson(catalogPath, { nextId: 1, items: [] });
-        const legacyItems = Array.isArray(legacyCatalog.items) ? legacyCatalog.items : [];
+        const legacyItems = Array.isArray(legacyCatalog.items) && legacyCatalog.items.length
+          ? legacyCatalog.items
+          : (!IS_PRODUCTION ? DEVELOPMENT_SEED_ITEMS : []);
         if (legacyItems.length) {
           for (const item of legacyItems) {
             const normalizedItem = normalizeItem(item);
+            const cols = extractTypedColumns(normalizedItem);
             await db.query(
-              `INSERT INTO content_catalog (id, payload, created_at, updated_at)
-               VALUES ($1, $2::jsonb, NOW(), NOW())
-               ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
-              [normalizedItem.id, JSON.stringify(normalizedItem)],
+              `INSERT INTO content_catalog (
+                 id, payload,
+                 status, content_type, title, title_key, language, category, collection,
+                 source_type, source_root_id, last_scan_run_id,
+                 year, rating, featured, featured_order, trending_score, duplicate_count,
+                 metadata_status, published_at, released_at,
+                 created_at, updated_at
+               )
+               VALUES (
+                 $1, $2::jsonb,
+                 $3, $4, $5, $6, $7, $8, $9,
+                 $10, $11, $12,
+                 $13, $14, $15, $16, $17, $18,
+                 $19, $20, $21,
+                 NOW(), NOW()
+               )
+               ON CONFLICT (id) DO UPDATE SET
+                 payload = EXCLUDED.payload,
+                 status = EXCLUDED.status,
+                 content_type = EXCLUDED.content_type,
+                 title = EXCLUDED.title,
+                 title_key = EXCLUDED.title_key,
+                 language = EXCLUDED.language,
+                 category = EXCLUDED.category,
+                 collection = EXCLUDED.collection,
+                 source_type = EXCLUDED.source_type,
+                 source_root_id = EXCLUDED.source_root_id,
+                 last_scan_run_id = EXCLUDED.last_scan_run_id,
+                 year = EXCLUDED.year,
+                 rating = EXCLUDED.rating,
+                 featured = EXCLUDED.featured,
+                 featured_order = EXCLUDED.featured_order,
+                 trending_score = EXCLUDED.trending_score,
+                 duplicate_count = EXCLUDED.duplicate_count,
+                 metadata_status = EXCLUDED.metadata_status,
+                 published_at = EXCLUDED.published_at,
+                 released_at = EXCLUDED.released_at,
+                 updated_at = NOW()`,
+              [
+                normalizedItem.id,
+                JSON.stringify(normalizedItem),
+                cols.status, cols.content_type, cols.title, cols.title_key, cols.language, cols.category, cols.collection,
+                cols.source_type, cols.source_root_id, cols.last_scan_run_id,
+                cols.year, cols.rating, cols.featured, cols.featured_order, cols.trending_score, cols.duplicate_count,
+                cols.metadata_status, cols.published_at, cols.released_at,
+              ],
             );
           }
         }
@@ -212,6 +448,21 @@ async function ensureContentStore() {
         );
         appStateCache.set(key, initialValue);
       }
+
+      // Run SQL migrations (idempotent — only unapplied files are executed)
+      if (!db.isInMemory) {
+        await runMigrations();
+      }
+
+      // After migrations, prime scanner caches from their proper relational tables.
+      // Migration 002 populates scanner_roots / scanner_runs from app_state data,
+      // so this always reflects the authoritative post-migration state.
+      const [dbRootsRes, dbRunsRes] = await Promise.all([
+        db.query('SELECT * FROM scanner_roots ORDER BY created_at ASC'),
+        db.query('SELECT * FROM scanner_runs ORDER BY created_at DESC LIMIT $1', [MAX_SCANNER_RUNS]),
+      ]);
+      appStateCache.set('scanner_roots', dbRootsRes.rows.map(rowToScannerRoot));
+      appStateCache.set('scanner_log', { runs: dbRunsRes.rows.map(rowToScannerRun) });
     })().catch((error) => {
       contentStoreReadyPromise = null;
       throw error;
@@ -250,65 +501,75 @@ function buildCatalogFilterClauses(filters = {}, params = []) {
     return `$${params.length}`;
   };
 
-  if (filters.status) {
-    clauses.push(`payload->>'status' = ${push(String(filters.status))}`);
-  }
+  // Use typed columns where available — avoids expression evaluation on every row
+  if (filters.status)       clauses.push(`status = ${push(String(filters.status))}`);
+  if (filters.type)         clauses.push(`content_type = ${push(String(filters.type))}`);
+  if (filters.source)       clauses.push(`source_type = ${push(String(filters.source))}`);
+  if (filters.sourceRootId) clauses.push(`source_root_id = ${push(String(filters.sourceRootId))}`);
+  if (filters.scanRunId)    clauses.push(`last_scan_run_id = ${push(String(filters.scanRunId))}`);
+  if (filters.language)     clauses.push(`language = ${push(String(filters.language))}`);
+  if (filters.category)     clauses.push(`category = ${push(String(filters.category))}`);
+  if (filters.collection)   clauses.push(`collection = ${push(String(filters.collection))}`);
+  if (filters.year)         clauses.push(`year = ${push(Number(filters.year))}`);
+  if (filters.featured)     clauses.push(`featured = true`);
+  if (filters.duplicatesOnly) clauses.push(`duplicate_count > 0`);
 
-  if (filters.type) {
-    clauses.push(`payload->>'type' = ${push(String(filters.type))}`);
-  }
-
-  if (filters.source) {
-    clauses.push(`payload->>'sourceType' = ${push(String(filters.source))}`);
-  }
-
-  if (filters.sourceRootId) {
-    clauses.push(`payload->>'sourceRootId' = ${push(String(filters.sourceRootId))}`);
-  }
-
-  if (filters.scanRunId) {
-    clauses.push(`payload->>'lastScanRunId' = ${push(String(filters.scanRunId))}`);
-  }
-
-  if (filters.language) {
-    clauses.push(`payload->>'language' = ${push(String(filters.language))}`);
-  }
-
-  if (filters.category) {
-    clauses.push(`payload->>'category' = ${push(String(filters.category))}`);
-  }
-
-  if (filters.collection) {
-    clauses.push(`payload->>'collection' = ${push(String(filters.collection))}`);
-  }
-
+  // Tags and genre still live in JSONB (array / multi-value fields)
   if (filters.tag) {
     clauses.push(`COALESCE(payload->'tags', '[]'::jsonb) ? ${push(String(filters.tag))}`);
   }
-
-  if (filters.year) {
-    clauses.push(`payload->>'year' = ${push(String(filters.year))}`);
+  if (filters.genre) {
+    clauses.push(`payload->>'genre' = ${push(String(filters.genre))}`);
   }
 
-  if (filters.duplicatesOnly) {
-    clauses.push(`CASE WHEN (payload->>'duplicateCount') ~ '^\\d+$' THEN (payload->>'duplicateCount')::int ELSE 0 END > 0`);
-  }
-
+  // Full-text search still uses the GIN trgm index on the payload expression
   if (filters.search) {
     const term = `%${String(filters.search).trim().toLowerCase()}%`;
     const placeholder = push(term);
-    clauses.push(`LOWER(CONCAT_WS(' ',
-      payload->>'title',
-      payload->>'genre',
-      payload->>'language',
-      payload->>'category',
-      payload->>'description',
-      payload->>'originalTitle',
-      payload->>'year'
-    )) LIKE ${placeholder}`);
+    clauses.push(
+      `LOWER(COALESCE(payload->>'title', '') || ' ' || COALESCE(payload->>'genre', '') || ' '` +
+      ` || COALESCE(payload->>'language', '') || ' ' || COALESCE(payload->>'category', '') || ' '` +
+      ` || COALESCE(payload->>'description', '') || ' ' || COALESCE(payload->>'originalTitle', '')` +
+      ` || ' ' || COALESCE(payload->>'year', '')) LIKE ${placeholder}`,
+    );
   }
 
   return clauses;
+}
+
+async function pruneCatalog() {
+  await ensureContentStore();
+  const { items } = await listItems({}, 0, null, 'latest', false);
+  const toDelete = [];
+
+  for (const item of items) {
+    const isJunk = JUNK_REGEX.test(item.title) || (item.sourcePath && JUNK_REGEX.test(item.sourcePath));
+    if (isJunk) {
+      toDelete.push(item.id);
+      continue;
+    }
+
+    if (item.sourcePath && fs.existsSync(item.sourcePath)) {
+      try {
+        const stats = fs.statSync(item.sourcePath);
+        const minSize = item.type === 'series' ? MIN_EPISODE_SIZE : MIN_MOVIE_SIZE;
+        if (stats.size < minSize) {
+          toDelete.push(item.id);
+        }
+      } catch {
+        // Skip if stat fails
+      }
+    } else if (item.sourcePath) {
+      // Path defined but missing
+      toDelete.push(item.id);
+    }
+  }
+
+  if (toDelete.length) {
+    await db.query('DELETE FROM content_catalog WHERE id = ANY($1)', [toDelete]);
+  }
+
+  return { deletedCount: toDelete.length };
 }
 
 async function getDuplicateGroupsForItems(items = []) {
@@ -327,7 +588,7 @@ async function getDuplicateGroupsForItems(items = []) {
     const typeIndex = params.length;
     params.push(titleKey);
     const titleKeyIndex = params.length;
-    conditions.push(`((payload->>'type' = $${typeIndex}) AND (COALESCE(payload->>'titleKey', '') = $${titleKeyIndex}))`);
+    conditions.push(`(content_type = $${typeIndex} AND title_key = $${titleKeyIndex})`);
   });
 
   const result = await db.query(
@@ -422,6 +683,86 @@ function clampNumber(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+// ── Helpers for typed-column persistence ─────────────────────────────────────
+
+function parseISODate(value) {
+  if (!value) return null;
+  const s = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/**
+ * Extract the typed column values that must be kept in sync alongside the
+ * JSONB payload so that WHERE / ORDER BY / GROUP BY can use fast indexes.
+ */
+function extractTypedColumns(item) {
+  return {
+    status:           item.status           || 'draft',
+    content_type:     item.type             || 'movie',
+    title:            item.title            || '',
+    title_key:        item.titleKey         || '',
+    language:         item.language         || '',
+    category:         item.category         || '',
+    collection:       item.collection       || '',
+    source_type:      item.sourceType       || 'manual',
+    source_root_id:   item.sourceRootId     || '',
+    last_scan_run_id: item.lastScanRunId    || '',
+    year:             item.year   ? Number(item.year)   : null,
+    rating:           item.rating ? Number(item.rating) : null,
+    featured:         Boolean(item.featured),
+    featured_order:   Number(item.featuredOrder  || 0),
+    trending_score:   Number(item.trendingScore  || 0),
+    duplicate_count:  Number(item.duplicateCount || 0),
+    metadata_status:  item.metadataStatus  || 'pending',
+    published_at:     parseISODate(item.publishedAt),
+    released_at:      parseISODate(item.releasedAt),
+  };
+}
+
+function rowToScannerRun(row) {
+  return {
+    id:              row.id,
+    status:          row.status,
+    startedAt:       row.started_at   ? row.started_at.toISOString()   : null,
+    completedAt:     row.completed_at ? row.completed_at.toISOString() : null,
+    rootIds:         row.root_ids     || [],
+    rootsRequested:  row.roots_requested,
+    rootsScanned:    row.roots_scanned,
+    created:         row.total_created,
+    updated:         row.total_updated,
+    deleted:         row.total_deleted,
+    unchanged:       row.total_unchanged,
+    duplicateDrafts: row.total_duplicate_drafts,
+    skipped:         row.skipped      || [],
+    errors:          row.errors       || [],
+    rootResults:     row.root_results || [],
+    error:           row.error        || null,
+  };
+}
+
+function toSafeInteger(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function rowToScannerRoot(row) {
+  return {
+    id:            row.id,
+    label:         row.label,
+    scanPath:      row.scan_path,
+    publicBaseUrl: row.public_base_url,
+    type:          row.type,
+    language:      row.language,
+    category:      row.category,
+    maxDepth:      row.max_depth  ?? undefined,
+    batchSize:     row.batch_size ?? undefined,
+    enabled:       row.enabled,
+    discovered:    row.discovered,
+  };
+}
+
 function normalizeRuntimeMinutes(value, fallbackSeconds = null) {
   const numericValue = Number(value);
 
@@ -461,6 +802,10 @@ function normalizeDurationSeconds(value, fallbackMinutes = null) {
 }
 
 function normalizeEpisodes(episodes = []) {
+  if (!Array.isArray(episodes)) {
+    return [];
+  }
+
   return (episodes || []).map((episode, index) => {
     const durationSeconds = normalizeDurationSeconds(episode.duration, episode.runtimeMinutes || episode.runtime || null);
     const runtimeMinutes = normalizeRuntimeMinutes(episode.runtimeMinutes || episode.runtime || episode.duration, durationSeconds);
@@ -476,6 +821,10 @@ function normalizeEpisodes(episodes = []) {
 }
 
 function normalizeSeasons(seasons = []) {
+  if (!Array.isArray(seasons)) {
+    return [];
+  }
+
   return (seasons || []).map((season, index) => ({
     ...season,
     id: season.id || index + 1,
@@ -633,7 +982,7 @@ function attachDuplicateMetadata(item, groups) {
   };
 }
 
-async function listItems(filters = {}, offset = 0, limit = null, sort = 'latest') {
+async function listItems(filters = {}, offset = 0, limit = null, sort = 'latest', includeDuplicates = true) {
   await ensureContentStore();
   const params = [];
   const clauses = buildCatalogFilterClauses(filters, params);
@@ -647,20 +996,16 @@ async function listItems(filters = {}, offset = 0, limit = null, sort = 'latest'
   );
   const total = Number(countResult.rows[0]?.count || 0);
 
+  // ORDER BY uses typed columns — no runtime JSONB casting / regex
   let orderClause = '';
   if (sort === 'popular' || sort === 'rating') {
-    orderClause = "ORDER BY CASE WHEN (payload->>'rating') ~ '^\\d+(\\.\\d+)?$' THEN (payload->>'rating')::numeric ELSE 0 END DESC NULLS LAST, id DESC";
+    orderClause = 'ORDER BY rating DESC NULLS LAST, id DESC';
   } else if (sort === 'trending') {
-    orderClause = "ORDER BY CASE WHEN (payload->>'trendingScore') ~ '^\\d+(\\.\\d+)?$' THEN (payload->>'trendingScore')::numeric ELSE 0 END DESC NULLS LAST, id DESC";
+    orderClause = 'ORDER BY trending_score DESC, id DESC';
   } else if (sort === 'featured') {
-    orderClause = "ORDER BY CASE WHEN (payload->>'featuredOrder') ~ '^\\d+(\\.\\d+)?$' THEN (payload->>'featuredOrder')::numeric ELSE 0 END DESC NULLS LAST, CASE WHEN (payload->>'featured') = 'true' THEN 1 ELSE 0 END DESC NULLS LAST, id DESC";
+    orderClause = 'ORDER BY featured_order DESC NULLS LAST, CASE WHEN featured THEN 1 ELSE 0 END DESC, id DESC';
   } else {
-    orderClause = `ORDER BY COALESCE(
-      CASE WHEN COALESCE(payload->>'publishedAt', '') ~ '^\\d{4}-\\d{2}-\\d{2}(?:[T\\s].*)?$' THEN (payload->>'publishedAt')::timestamptz END,
-      CASE WHEN COALESCE(payload->>'releasedAt', '') ~ '^\\d{4}-\\d{2}-\\d{2}(?:[T\\s].*)?$' THEN (payload->>'releasedAt')::timestamptz END,
-      CASE WHEN COALESCE(payload->>'updatedAt', '') ~ '^\\d{4}-\\d{2}-\\d{2}(?:[T\\s].*)?$' THEN (payload->>'updatedAt')::timestamptz END,
-      updated_at
-    ) DESC, id DESC`;
+    orderClause = 'ORDER BY COALESCE(published_at, released_at, updated_at) DESC NULLS LAST, id DESC';
   }
 
   const listParams = [...params];
@@ -684,6 +1029,11 @@ async function listItems(filters = {}, offset = 0, limit = null, sort = 'latest'
   );
 
   const items = result.rows.map((row) => normalizeItem(row.payload));
+  
+  if (!includeDuplicates) {
+    return { items, total };
+  }
+
   const duplicateGroups = await getDuplicateGroupsForItems(items);
   return { items: items.map((item) => attachDuplicateMetadata(item, duplicateGroups)), total };
 }
@@ -810,6 +1160,27 @@ async function getItemById(idOrSlug) {
   return attachDuplicateMetadata(item, duplicateGroups);
 }
 
+async function getItemsByIds(ids = []) {
+  const numericIds = [...new Set(ids.map(Number).filter((id) => Number.isFinite(id) && id > 0))];
+  if (!numericIds.length) {
+    return new Map();
+  }
+
+  await ensureContentStore();
+  const result = await db.query(
+    'SELECT payload FROM content_catalog WHERE id = ANY($1::bigint[])',
+    [numericIds],
+  );
+
+  const itemsMap = new Map();
+  for (const row of result.rows) {
+    const item = normalizeItem(row.payload);
+    itemsMap.set(Number(item.id), item);
+  }
+
+  return itemsMap;
+}
+
 async function getItemByScanSignature(scanSignature) {
   await ensureContentStore();
   const result = await db.query(
@@ -832,10 +1203,28 @@ async function createItem(payload) {
     titleKey: normalizeTitleKey(payload.title),
   });
 
+  const cols = extractTypedColumns(item);
   await db.query(
-    `INSERT INTO content_catalog (id, payload, created_at, updated_at)
-     VALUES ($1, $2::jsonb, $3, $4)`,
-    [item.id, JSON.stringify(item), now, now],
+    `INSERT INTO content_catalog (
+       id, payload, created_at, updated_at,
+       status, content_type, title, title_key, language, category, collection,
+       source_type, source_root_id, last_scan_run_id, year, rating, featured,
+       featured_order, trending_score, duplicate_count, metadata_status,
+       published_at, released_at
+     ) VALUES (
+       $1, $2::jsonb, $3, $4,
+       $5, $6, $7, $8, $9, $10, $11,
+       $12, $13, $14, $15, $16, $17,
+       $18, $19, $20, $21,
+       $22, $23
+     )`,
+    [
+      item.id, JSON.stringify(item), now, now,
+      cols.status, cols.content_type, cols.title, cols.title_key, cols.language, cols.category, cols.collection,
+      cols.source_type, cols.source_root_id, cols.last_scan_run_id, cols.year, cols.rating, cols.featured,
+      cols.featured_order, cols.trending_score, cols.duplicate_count, cols.metadata_status,
+      cols.published_at, cols.released_at,
+    ],
   );
   await setCatalogMeta({ nextId: meta.nextId + 1 });
   return getItemById(item.id);
@@ -855,11 +1244,38 @@ async function updateItem(id, payload) {
     updatedAt: new Date().toISOString(),
   });
 
+  const cols = extractTypedColumns(updated);
   await db.query(
     `UPDATE content_catalog
-     SET payload = $2::jsonb, updated_at = NOW()
+     SET payload          = $2::jsonb,
+         updated_at       = NOW(),
+         status           = $3,
+         content_type     = $4,
+         title            = $5,
+         title_key        = $6,
+         language         = $7,
+         category         = $8,
+         collection       = $9,
+         source_type      = $10,
+         source_root_id   = $11,
+         last_scan_run_id = $12,
+         year             = $13,
+         rating           = $14,
+         featured         = $15,
+         featured_order   = $16,
+         trending_score   = $17,
+         duplicate_count  = $18,
+         metadata_status  = $19,
+         published_at     = $20,
+         released_at      = $21
      WHERE id = $1`,
-    [updated.id, JSON.stringify(updated)],
+    [
+      updated.id, JSON.stringify(updated),
+      cols.status, cols.content_type, cols.title, cols.title_key, cols.language, cols.category, cols.collection,
+      cols.source_type, cols.source_root_id, cols.last_scan_run_id, cols.year, cols.rating, cols.featured,
+      cols.featured_order, cols.trending_score, cols.duplicate_count, cols.metadata_status,
+      cols.published_at, cols.released_at,
+    ],
   );
   return getItemById(updated.id);
 }
@@ -907,10 +1323,30 @@ async function upsertScannedItem(payload) {
       lastScanRunAt: payload.lastScanRunAt || now,
     });
 
+    const insertCols = extractTypedColumns(item);
     await db.query(
-      `INSERT INTO content_catalog (id, payload, created_at, updated_at)
-       VALUES ($1, $2::jsonb, $3, $4)`,
-      [item.id, JSON.stringify(item), now, now],
+      `INSERT INTO content_catalog (
+         id, payload, created_at, updated_at,
+         status, content_type, title, title_key, language, category, collection,
+         source_type, source_root_id, last_scan_run_id, year, rating, featured,
+         featured_order, trending_score, duplicate_count, metadata_status,
+         published_at, released_at
+       ) VALUES (
+         $1, $2::jsonb, $3, $4,
+         $5, $6, $7, $8, $9, $10, $11,
+         $12, $13, $14, $15, $16, $17,
+         $18, $19, $20, $21,
+         $22, $23
+       )`,
+      [
+        item.id, JSON.stringify(item), now, now,
+        insertCols.status, insertCols.content_type, insertCols.title, insertCols.title_key,
+        insertCols.language, insertCols.category, insertCols.collection,
+        insertCols.source_type, insertCols.source_root_id, insertCols.last_scan_run_id,
+        insertCols.year, insertCols.rating, insertCols.featured,
+        insertCols.featured_order, insertCols.trending_score, insertCols.duplicate_count,
+        insertCols.metadata_status, insertCols.published_at, insertCols.released_at,
+      ],
     );
     await setCatalogMeta({ nextId: meta.nextId + 1 });
     return { item: await getItemById(item.id), created: true, updated: false };
@@ -929,11 +1365,40 @@ async function upsertScannedItem(payload) {
     lastScanRunAt: payload.lastScanRunAt || now,
   });
 
+  const updateCols = extractTypedColumns(item);
   await db.query(
     `UPDATE content_catalog
-     SET payload = $2::jsonb, updated_at = NOW()
+     SET payload          = $2::jsonb,
+         updated_at       = NOW(),
+         status           = $3,
+         content_type     = $4,
+         title            = $5,
+         title_key        = $6,
+         language         = $7,
+         category         = $8,
+         collection       = $9,
+         source_type      = $10,
+         source_root_id   = $11,
+         last_scan_run_id = $12,
+         year             = $13,
+         rating           = $14,
+         featured         = $15,
+         featured_order   = $16,
+         trending_score   = $17,
+         duplicate_count  = $18,
+         metadata_status  = $19,
+         published_at     = $20,
+         released_at      = $21
      WHERE id = $1`,
-    [item.id, JSON.stringify(item)],
+    [
+      item.id, JSON.stringify(item),
+      updateCols.status, updateCols.content_type, updateCols.title, updateCols.title_key,
+      updateCols.language, updateCols.category, updateCols.collection,
+      updateCols.source_type, updateCols.source_root_id, updateCols.last_scan_run_id,
+      updateCols.year, updateCols.rating, updateCols.featured,
+      updateCols.featured_order, updateCols.trending_score, updateCols.duplicate_count,
+      updateCols.metadata_status, updateCols.published_at, updateCols.released_at,
+    ],
   );
   return { item: await getItemById(item.id), created: false, updated: true };
 }
@@ -950,16 +1415,16 @@ async function deleteScannerItemsNotInSignatures(sourceRootId, scanSignatures = 
   if (signatures.length) {
     result = await db.query(
       `DELETE FROM content_catalog
-       WHERE payload->>'sourceType' = $1
-         AND payload->>'sourceRootId' = $2
+       WHERE source_type = $1
+         AND source_root_id = $2
          AND COALESCE(payload->>'scanSignature', '') <> ALL($3::text[])`,
       ['scanner', rootId, signatures],
     );
   } else {
     result = await db.query(
       `DELETE FROM content_catalog
-       WHERE payload->>'sourceType' = $1
-         AND payload->>'sourceRootId' = $2`,
+       WHERE source_type = $1
+         AND source_root_id = $2`,
       ['scanner', rootId],
     );
   }
@@ -1062,11 +1527,47 @@ async function refreshCatalogReferencesForNormalizedFile(payload = {}) {
 
   if (mutated) {
     for (const item of nextItems) {
+      const refItem = normalizeItem(item);
+      const refCols = extractTypedColumns(refItem);
       await db.query(
-        `INSERT INTO content_catalog (id, payload, created_at, updated_at)
-         VALUES ($1, $2::jsonb, NOW(), NOW())
-         ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
-        [item.id, JSON.stringify(normalizeItem(item))],
+        `INSERT INTO content_catalog (
+           id, payload, created_at, updated_at,
+           status, content_type, title, title_key, language, category, collection,
+           source_type, source_root_id, last_scan_run_id, year, rating, featured,
+           featured_order, trending_score, duplicate_count, metadata_status,
+           published_at, released_at
+         ) VALUES ($1, $2::jsonb, NOW(), NOW(), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+         ON CONFLICT (id) DO UPDATE SET
+           payload          = EXCLUDED.payload,
+           updated_at       = NOW(),
+           status           = EXCLUDED.status,
+           content_type     = EXCLUDED.content_type,
+           title            = EXCLUDED.title,
+           title_key        = EXCLUDED.title_key,
+           language         = EXCLUDED.language,
+           category         = EXCLUDED.category,
+           collection       = EXCLUDED.collection,
+           source_type      = EXCLUDED.source_type,
+           source_root_id   = EXCLUDED.source_root_id,
+           last_scan_run_id = EXCLUDED.last_scan_run_id,
+           year             = EXCLUDED.year,
+           rating           = EXCLUDED.rating,
+           featured         = EXCLUDED.featured,
+           featured_order   = EXCLUDED.featured_order,
+           trending_score   = EXCLUDED.trending_score,
+           duplicate_count  = EXCLUDED.duplicate_count,
+           metadata_status  = EXCLUDED.metadata_status,
+           published_at     = EXCLUDED.published_at,
+           released_at      = EXCLUDED.released_at`,
+        [
+          refItem.id, JSON.stringify(refItem),
+          refCols.status, refCols.content_type, refCols.title, refCols.title_key,
+          refCols.language, refCols.category, refCols.collection,
+          refCols.source_type, refCols.source_root_id, refCols.last_scan_run_id,
+          refCols.year, refCols.rating, refCols.featured,
+          refCols.featured_order, refCols.trending_score, refCols.duplicate_count,
+          refCols.metadata_status, refCols.published_at, refCols.released_at,
+        ],
       );
     }
   }
@@ -1075,42 +1576,138 @@ async function refreshCatalogReferencesForNormalizedFile(payload = {}) {
 }
 
 async function getStats() {
-  const { items } = await listItems();
-  const published = items.filter((item) => item.status === 'published');
-  const drafts = items.filter((item) => item.status === 'draft');
-  const movies = items.filter((item) => item.type === 'movie');
-  const series = items.filter((item) => item.type === 'series');
-  const scannerDrafts = items.filter((item) => item.sourceType === 'scanner' && item.status === 'draft');
-  const duplicateDrafts = scannerDrafts.filter((item) => item.duplicateCount > 0);
+  await ensureContentStore();
+  const res = await db.query(`
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE status = 'published')::int              AS published,
+      COUNT(*) FILTER (WHERE status = 'draft')::int                  AS drafts,
+      COUNT(*) FILTER (WHERE content_type = 'movie')::int            AS movies,
+      COUNT(*) FILTER (WHERE content_type = 'series')::int           AS series,
+      COUNT(*) FILTER (WHERE source_type = 'scanner' AND status = 'draft')::int AS scanner_drafts,
+      COUNT(*) FILTER (WHERE source_type = 'scanner' AND status = 'draft' AND duplicate_count > 0)::int AS duplicate_drafts
+    FROM content_catalog
+  `);
 
+  const row = res.rows[0];
   return {
-    totalContent: items.length,
-    publishedContent: published.length,
-    draftContent: drafts.length,
-    totalMovies: movies.length,
-    totalSeries: series.length,
-    scannerDrafts: scannerDrafts.length,
-    duplicateDrafts: duplicateDrafts.length,
+    totalContent: row.total,
+    publishedContent: row.published,
+    draftContent: row.drafts,
+    totalMovies: row.movies,
+    totalSeries: row.series,
+    scannerDrafts: row.scanner_drafts,
+    duplicateDrafts: row.duplicate_drafts,
   };
 }
 
 async function getRecentItems(limit = 10) {
-  const { items } = await listItems();
-  return items.slice(0, limit);
+  const { items } = await listItems({}, 0, limit);
+  return items;
 }
 
 function loadScannerRoots() {
   return appStateCache.get('scanner_roots') || [];
 }
 
-async function saveScannerRoots(payload) {
-  return setAppState('scanner_roots', payload);
+async function saveScannerRoots(roots) {
+  await ensureContentStore();
+  const rootsArray = Array.isArray(roots) ? roots : [];
+  const incomingIds = rootsArray.map((r) => String(r.id || '')).filter(Boolean);
+
+  // Delete roots that are no longer in the list
+  if (incomingIds.length) {
+    await db.query('DELETE FROM scanner_roots WHERE id <> ALL($1::text[])', [incomingIds]);
+  } else {
+    await db.query('DELETE FROM scanner_roots');
+  }
+
+  // Upsert each root into the relational table
+  for (const root of rootsArray) {
+    await db.query(
+      `INSERT INTO scanner_roots (
+         id, label, scan_path, public_base_url, type, language, category,
+         max_depth, batch_size, enabled, discovered, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         label           = EXCLUDED.label,
+         scan_path       = EXCLUDED.scan_path,
+         public_base_url = EXCLUDED.public_base_url,
+         type            = EXCLUDED.type,
+         language        = EXCLUDED.language,
+         category        = EXCLUDED.category,
+         max_depth       = EXCLUDED.max_depth,
+         batch_size      = EXCLUDED.batch_size,
+         enabled         = EXCLUDED.enabled,
+         discovered      = EXCLUDED.discovered,
+         updated_at      = NOW()`,
+      [
+        String(root.id || ''),
+        String(root.label || ''),
+        String(root.scanPath || ''),
+        String(root.publicBaseUrl || ''),
+        String(root.type || 'movie'),
+        String(root.language || ''),
+        String(root.category || ''),
+        root.maxDepth  != null ? Number(root.maxDepth)  : null,
+        root.batchSize != null ? Number(root.batchSize) : null,
+        root.enabled !== false,
+        Boolean(root.discovered),
+      ],
+    );
+  }
+
+  appStateCache.set('scanner_roots', rootsArray);
+  return rootsArray;
 }
 
 async function recordScannerRun(entry) {
-  const log = loadScannerLog();
-  const runs = [entry, ...(log.runs || [])].slice(0, MAX_SCANNER_RUNS);
-  await saveScannerLog({ runs });
+  await ensureContentStore();
+  await db.query(
+    `INSERT INTO scanner_runs (
+       id, status, started_at, completed_at, root_ids,
+       roots_requested, roots_scanned,
+       total_created, total_updated, total_deleted, total_unchanged, total_duplicate_drafts,
+       skipped, errors, root_results, error, created_at
+     ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb, $15::jsonb, $16, $17)
+     ON CONFLICT (id) DO UPDATE SET
+       status                 = EXCLUDED.status,
+       completed_at           = EXCLUDED.completed_at,
+       roots_scanned          = EXCLUDED.roots_scanned,
+       total_created          = EXCLUDED.total_created,
+       total_updated          = EXCLUDED.total_updated,
+       total_deleted          = EXCLUDED.total_deleted,
+       total_unchanged        = EXCLUDED.total_unchanged,
+       total_duplicate_drafts = EXCLUDED.total_duplicate_drafts,
+       skipped                = EXCLUDED.skipped,
+       errors                 = EXCLUDED.errors,
+       root_results           = EXCLUDED.root_results,
+       error                  = EXCLUDED.error`,
+    [
+      String(entry.id || ''),
+      String(entry.status || 'completed'),
+      entry.startedAt   || null,
+      entry.completedAt || null,
+      JSON.stringify(entry.rootIds     || []),
+      toSafeInteger(entry.rootsRequested),
+      toSafeInteger(entry.rootsScanned),
+      toSafeInteger(entry.created),
+      toSafeInteger(entry.updated),
+      toSafeInteger(entry.deleted),
+      toSafeInteger(entry.unchanged),
+      toSafeInteger(entry.duplicateDrafts),
+      JSON.stringify(entry.skipped     || []),
+      JSON.stringify(entry.errors      || []),
+      JSON.stringify(entry.rootResults || []),
+      entry.error || null,
+      entry.startedAt || new Date().toISOString(),
+    ],
+  );
+
+  // Keep in-memory cache in sync (newest first, capped at MAX_SCANNER_RUNS)
+  const current = appStateCache.get('scanner_log') || { runs: [] };
+  const runs = [entry, ...(current.runs || []).filter((r) => r.id !== entry.id)].slice(0, MAX_SCANNER_RUNS);
+  appStateCache.set('scanner_log', { runs });
   return entry;
 }
 
@@ -1327,6 +1924,7 @@ module.exports = {
   ensureUser,
   findAdminByUsername,
   getItemById,
+  getItemsByIds,
   getItemByScanSignature,
   getMediaNormalizerLog,
   getMediaNormalizerState,
@@ -1343,6 +1941,7 @@ module.exports = {
   loadScannerState,
   markWatchProgressComplete,
   normalizeTitleKey,
+  pruneCatalog,
   recordScannerRun,
   recordRecentSearch,
   refreshCatalogReferencesForNormalizedFile,
@@ -1360,46 +1959,91 @@ module.exports = {
 };
 
 async function getLibraryOrganization(filters = {}) {
-  const { items } = await listItems(filters, 0, null);
-  const summarize = (values) => Object.entries(values)
-    .map(([label, count]) => ({ label, count }))
-    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  await ensureContentStore();
+  const params = [];
+  const clauses = buildCatalogFilterClauses(filters, params);
+  const whereClause = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 
-  const collections = {};
-  const tags = {};
-  const categories = {};
-  const languages = {};
-  const roots = {};
+  // All GROUP BY queries now use typed columns — no JSONB expression evaluation
+  const totalsPromise = db.query(`
+    SELECT
+      COUNT(*)::int                    AS items,
+      COUNT(DISTINCT collection)::int  AS collections
+    FROM content_catalog
+    ${whereClause}
+  `, params);
 
-  items.forEach((item) => {
-    if (item.collection) {
-      collections[item.collection] = (collections[item.collection] || 0) + 1;
-    }
-    if (item.category) {
-      categories[item.category] = (categories[item.category] || 0) + 1;
-    }
-    if (item.language) {
-      languages[item.language] = (languages[item.language] || 0) + 1;
-    }
-    if (item.sourceRootLabel || item.sourceRootId) {
-      const key = item.sourceRootLabel || item.sourceRootId;
-      roots[key] = (roots[key] || 0) + 1;
-    }
-    item.tags.forEach((tag) => {
-      tags[tag] = (tags[tag] || 0) + 1;
-    });
-  });
+  const categoriesPromise = db.query(`
+    SELECT category AS label, COUNT(*)::int AS count
+    FROM content_catalog
+    ${whereClause}
+    GROUP BY label
+    ORDER BY count DESC, label ASC
+    LIMIT 200
+  `, params);
+
+  const languagesPromise = db.query(`
+    SELECT language AS label, COUNT(*)::int AS count
+    FROM content_catalog
+    ${whereClause}
+    GROUP BY label
+    ORDER BY count DESC, label ASC
+    LIMIT 200
+  `, params);
+
+  const collectionsPromise = db.query(`
+    SELECT collection AS label, COUNT(*)::int AS count
+    FROM content_catalog
+    ${whereClause ? whereClause + '\n    AND' : 'WHERE'} collection <> ''
+    GROUP BY label
+    ORDER BY count DESC, label ASC
+    LIMIT 200
+  `, params);
+
+  const rootsPromise = db.query(`
+    SELECT COALESCE(NULLIF(payload->>'sourceRootLabel', ''), source_root_id) AS label,
+           COUNT(*)::int AS count
+    FROM content_catalog
+    ${whereClause}
+    GROUP BY label
+    ORDER BY count DESC, label ASC
+    LIMIT 100
+  `, params);
+
+  // Tags live in JSONB arrays — filter rows first in a subquery so the lateral
+  // expansion only touches matching rows, not the entire table.
+  const tagsPromise = db.query(`
+    SELECT tag AS label, COUNT(*)::int AS count
+    FROM (
+      SELECT payload->'tags' AS tags
+      FROM content_catalog
+      ${whereClause}
+    ) AS filtered,
+    jsonb_array_elements_text(COALESCE(filtered.tags, '[]'::jsonb)) AS tag
+    GROUP BY label
+    ORDER BY count DESC, label ASC
+    LIMIT 200
+  `, params);
+
+  const [totalsRes, categoriesRes, languagesRes, collectionsRes, rootsRes, tagsRes] = await Promise.all([
+    totalsPromise,
+    categoriesPromise,
+    languagesPromise,
+    collectionsPromise,
+    rootsPromise,
+    tagsPromise,
+  ]);
 
   return {
     totals: {
-      items: items.length,
-      collections: Object.keys(collections).length,
-      tags: Object.keys(tags).length,
+      items: totalsRes.rows[0]?.items || 0,
+      collections: totalsRes.rows[0]?.collections || 0,
+      tags: tagsRes.rows.length,
     },
-    collections: summarize(collections),
-    tags: summarize(tags),
-    categories: summarize(categories),
-    languages: summarize(languages),
-    roots: summarize(roots),
+    collections: collectionsRes.rows,
+    tags: tagsRes.rows,
+    categories: categoriesRes.rows,
+    languages: languagesRes.rows,
+    roots: rootsRes.rows.filter((r) => r.label !== null),
   };
 }
