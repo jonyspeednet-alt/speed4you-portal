@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useBreakpoint, useRecentlyViewed, useTVMode } from '../../../hooks';
+import { useBreakpoint, useTVMode } from '../../../hooks';
 import StarRating from '../../../components/ui/StarRating';
 import WatchlistButton from '../../../components/ui/WatchlistButton';
 
@@ -23,6 +23,26 @@ function HeroCarousel({ content, items }) {
     const [isAutoPlay, setIsAutoPlay] = useState(true);
     const [isHovering, setIsHovering] = useState(false);
 
+    const scheduleAutoPlayResume = useCallback(() => {
+        if (resumeTimerRef.current) {
+            clearTimeout(resumeTimerRef.current);
+        }
+
+        setIsAutoPlay(false);
+        resumeTimerRef.current = window.setTimeout(() => {
+            setIsAutoPlay(true);
+            setProgress(0);
+        }, AUTO_PLAY_RESUME_DELAY);
+    }, []);
+
+    const moveToSlide = useCallback((index) => {
+        if (contentItems.length === 0) return;
+        const normalizedIndex = (index + contentItems.length) % contentItems.length;
+        setActiveIndex(normalizedIndex);
+        setProgress(0);
+        scheduleAutoPlayResume();
+    }, [contentItems.length, scheduleAutoPlayResume]);
+
     useEffect(() => {
         return () => {
             if (resumeTimerRef.current) {
@@ -33,10 +53,10 @@ function HeroCarousel({ content, items }) {
 
     useEffect(() => {
         if (!contentItems.length) {
-            setActiveIndex(0);
+            setTimeout(() => setActiveIndex(0), 0);
             return;
         }
-        setActiveIndex((prev) => Math.min(prev, contentItems.length - 1));
+        setTimeout(() => setActiveIndex((prev) => Math.min(prev, contentItems.length - 1)), 0);
     }, [contentItems.length]);
 
     const previewItems = getPreviewItems(contentItems, activeIndex, 4);
@@ -73,6 +93,7 @@ function HeroCarousel({ content, items }) {
         return () => window.removeEventListener('scroll', handleScroll);
     }, [isMobile, isTablet]);
 
+
     useEffect(() => {
         const handleKeyDown = (event) => {
             const targetWithinHero = sectionRef.current?.contains(document.activeElement) || document.activeElement === document.body;
@@ -91,27 +112,7 @@ function HeroCarousel({ content, items }) {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activeIndex, contentItems.length]);
-
-    const scheduleAutoPlayResume = () => {
-        if (resumeTimerRef.current) {
-            clearTimeout(resumeTimerRef.current);
-        }
-
-        setIsAutoPlay(false);
-        resumeTimerRef.current = window.setTimeout(() => {
-            setIsAutoPlay(true);
-            setProgress(0);
-        }, AUTO_PLAY_RESUME_DELAY);
-    };
-
-    const moveToSlide = (index) => {
-        if (contentItems.length === 0) return;
-        const normalizedIndex = (index + contentItems.length) % contentItems.length;
-        setActiveIndex(normalizedIndex);
-        setProgress(0);
-        scheduleAutoPlayResume();
-    };
+    }, [activeIndex, contentItems.length, moveToSlide]);
 
     const handleTouchStart = (event) => {
         touchStartRef.current = event.changedTouches[0].clientX;
@@ -131,7 +132,6 @@ function HeroCarousel({ content, items }) {
     if (!contentItem) return null;
 
     const heroImage = contentItem.backdrop || contentItem.poster || '';
-    const hasPoster = Boolean(contentItem.poster);
     const isSeries = contentItem.type === 'series';
     const isPlaceholder = Boolean(contentItem.isPlaceholder);
     const title = contentItem.title || 'Featured spotlight';

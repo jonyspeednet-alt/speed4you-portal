@@ -193,7 +193,7 @@ async function fetchAllPublishedCatalog() {
 }
 
 function HomePage() {
-  const { isMobile, isTablet } = useBreakpoint();
+  const { isMobile } = useBreakpoint();
   const isTVMode = useTVMode();
   const { items: recentlyViewed } = useRecentlyViewed();
   const [content, setContent] = useState(() => readHomepageCache()?.content || fallbackContent);
@@ -236,8 +236,6 @@ function HomePage() {
     };
   }, []);
 
-  const mergedCatalogItems = mergePools(content.latest, content.trending, content.popular, content.movies, content.series, content.bengali);
-  const compactHomepage = mergedCatalogItems.length <= HOMEPAGE_COMPACT_THRESHOLD;
   const hasFeaturedHero = Array.isArray(content.featured) && content.featured.length > 0;
 
   return (

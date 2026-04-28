@@ -18,11 +18,10 @@ function HeroBanner({ content: contentItems }) {
   }, [contentItems]);
 
   const content = Array.isArray(contentItems) ? contentItems[activeIndex] : contentItems;
-  if (!content) return null;
 
   // Parallax scroll effect (desktop only)
   useEffect(() => {
-    if (isMobile || isTablet) return;
+    if (!content || isMobile || isTablet) return;
     function onScroll() {
       if (!bgRef.current) return;
       const y = window.scrollY;
@@ -30,7 +29,10 @@ function HeroBanner({ content: contentItems }) {
     }
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
-  }, [isMobile, isTablet]);
+  }, [content, isMobile, isTablet]);
+
+  if (!content) return null;
+
   const heroImage = content.backdrop || content.poster || '';
   const hasPoster = Boolean(content.poster);
   const isSeries = content.type === 'series';

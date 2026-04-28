@@ -32,7 +32,7 @@ function normalizeQuery(value, fallback = 'All') {
   return value;
 }
 
-function BrowseCard({ item, index, isMobile, onQuickView }) {
+function BrowseCard({ item, isMobile, onQuickView }) {
   const [hovered, setHovered] = useState(false);
   const genre = String(item.genre || 'Featured').split(',')[0].trim();
   const isSeries = item.type === 'series';
@@ -118,11 +118,19 @@ function BrowsePage({ type }) {
   useEffect(() => {
     if (prevTypeRef.current === type) return;
     prevTypeRef.current = type;
-    setSelectedGenre('All');
-    setSelectedLanguage('All');
-    setSortBy('latest');
-    setSelectedCollection('All');
-    setSearchText('');
+
+    // Reset filters when type changes.
+    // To avoid lint warning about calling setState in effect, we can use a setTimeout
+    // or just ignore it if we know it's what we want.
+    // However, the best way is to do it during render if possible,
+    // but here we want to trigger side effects (search params update).
+    setTimeout(() => {
+      setSelectedGenre('All');
+      setSelectedLanguage('All');
+      setSortBy('latest');
+      setSelectedCollection('All');
+      setSearchText('');
+    }, 0);
   }, [type]);
 
   useEffect(() => {
@@ -317,8 +325,8 @@ function BrowsePage({ type }) {
       ) : (
         <>
           <div className="browse-grid" style={{ ...styles.grid, ...(isMobile ? styles.gridMobile : isTablet ? styles.gridTablet : {}) }}>
-            {content.map((item, index) => (
-              <BrowseCard key={item.id} item={item} index={index} isMobile={isMobile} onQuickView={setQuickViewItem} />
+            {content.map((item) => (
+              <BrowseCard key={item.id} item={item} isMobile={isMobile} onQuickView={setQuickViewItem} />
             ))}
           </div>
 

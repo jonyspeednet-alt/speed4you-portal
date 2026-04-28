@@ -9,27 +9,19 @@ test('validateQuery returns 400 on invalid query', async () => {
   });
   const middleware = validateQuery(schema);
   const req = { query: { page: '0' } };
-  let payload = null;
-  const res = {
-    status(code) {
-      this.statusCode = code;
-      return this;
-    },
-    json(value) {
-      payload = value;
-      return this;
-    },
-  };
+  const res = {};
+  let error = null;
 
   await new Promise((resolve) => {
-    middleware(req, res, () => {
+    middleware(req, res, (err) => {
+      error = err;
       resolve();
     });
-    setTimeout(resolve, 10);
   });
 
-  assert.equal(res.statusCode, 400);
-  assert.equal(payload.error, 'Invalid query parameters');
+  assert.ok(error);
+  assert.equal(error.status, 400);
+  assert.equal(error.message, 'Validation failed');
 });
 
 test('validateQuery populates validatedQuery on valid input', async () => {

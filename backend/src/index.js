@@ -40,20 +40,23 @@ function createCorsError() {
 }
 
 function buildCorsOriginChecker() {
-  if (!corsOrigins.length) {
-    return (origin, callback) => {
-      // In development, if no origins are specified, allow all.
-      // In production, we'll have already thrown an error if REQUIRE_CORS_ALLOWLIST is 1.
-      callback(null, true);
-    };
+  if (!isProduction && !corsOrigins.length && process.env.REQUIRE_CORS_ALLOWLIST !== '1') {
+    return (origin, callback) => callback(null, true);
   }
 
   return (origin, callback) => {
-    if (!origin || corsOrigins.includes(origin)) {
+    // Allow requests with no origin (like non-browser clients)
+    if (!origin) {
       callback(null, true);
       return;
     }
 
+    if (corsOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    logger.warn(`CORS blocked request from unauthorized origin: ${origin}`);
     callback(createCorsError());
   };
 }
@@ -176,7 +179,7 @@ if (fs.existsSync(frontendDistPath)) {
 
   // Handle SPA routing: serve index.html for all non-API routes
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/')) {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/portal-api/api/')) {
       return next();
     }
     
@@ -191,7 +194,7 @@ if (fs.existsSync(frontendDistPath)) {
 }
 
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/')) {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/portal-api/api/')) {
     return res.status(404).json({
       ok: false,
       error: {

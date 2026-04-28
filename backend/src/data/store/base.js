@@ -377,4 +377,5 @@ module.exports = {
   ensureContentStore,
   getAppState,
   setAppState,
+  closePool: db.closePool,
 };

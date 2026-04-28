@@ -2,6 +2,7 @@
  * Custom hook for Hero Carousel configuration
  * Allows easy customization of carousel behavior and timing
  */
+import React from 'react';
 
 export const useCarouselConfig = (overrides = {}) => {
     const defaultConfig = {

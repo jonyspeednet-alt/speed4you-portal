@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useBreakpoint } from '../../hooks';
 
 const navItems = [
@@ -76,7 +76,6 @@ function MobileNav() {
   const [dragStartY, setDragStartY] = useState(null);
   const [dragDelta, setDragDelta] = useState(0);
   const location = useLocation();
-  const navigate = useNavigate();
   const { isSmallMobile } = useBreakpoint();
   const menuRef = useRef(null);
   const firstFocusableRef = useRef(null);
@@ -533,7 +532,6 @@ const styles = {
     paddingBottom: '8px',
     paddingTop: '4px',
     scrollbarWidth: 'none',
-    WebkitOverflowScrolling: 'touch',
   },
   quickChip: {
     padding: '10px 14px',

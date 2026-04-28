@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import MobileNav from './MobileNav';
 import ProfileMenu from './ProfileMenu';
-import { useBreakpoint, useTVMode } from '../../hooks';
+import { useBreakpoint } from '../../hooks';
 
 const navItems = [
   { path: '/', label: 'Home' },
@@ -18,7 +18,6 @@ function TopNav() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [hoveredLink, setHoveredLink] = useState(null);
   const { isMobile, isTablet, isSmallMobile, width } = useBreakpoint();
-  const isTVMode = useTVMode();
   const isDesktop = !isMobile && !isTablet;
   const isCompactDesktop = isDesktop && width < 1520;
   const isWideDesktop = isDesktop && width >= 1520;

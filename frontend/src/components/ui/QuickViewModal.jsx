@@ -1,10 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import WatchlistButton from './WatchlistButton';
 
 export default function QuickViewModal({ isOpen, onClose, item }) {
-  const modalRef = useRef(null);
-
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';

@@ -52,7 +52,6 @@ function ContentRail({ title, items, type = 'default', subtitle = 'Curated now',
           <ContentCard
             key={item.id}
             item={item}
-            index={index}
             type={type}
             eager={index < priorityCount}
             compact={isMobile}
@@ -66,7 +65,7 @@ function ContentRail({ title, items, type = 'default', subtitle = 'Curated now',
   );
 }
 
-function ContentCard({ item, type, index, eager, compact, tablet, tv, onQuickView }) {
+function ContentCard({ item, type, eager, compact, tablet, tv, onQuickView }) {
   const isSeries = type === 'series' || item.type === 'series';
   const isLandscape = type === 'continue';
   const [hovered, setHovered] = useState(false);

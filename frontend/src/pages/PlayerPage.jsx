@@ -484,7 +484,7 @@ function PlayerPage() {
       setAutoPlayCountdown(prev => prev - 1);
     }, 1000);
     return () => clearTimeout(timer);
-  }, [autoPlayCountdown]);
+  }, [autoPlayCountdown, playNextEpisode]);
 
   const persistProgress = useCallback(async (position, duration) => {
     if (!content?.type || !contentId || !Number.isFinite(position) || position <= 0) {
@@ -557,14 +557,20 @@ function PlayerPage() {
         persistProgress(nextTime, duration);
       } else if (event.key === 'ArrowUp') {
         event.preventDefault();
-        setVolume((v) => clamp(v + 10, 0, 100));
-        setToastData({ icon: 'volume', value: clamp(volume + 10, 0, 100) });
+        setVolume((v) => {
+          const next = clamp(v + 10, 0, 100);
+          setToastData({ icon: 'volume', value: next });
+          return next;
+        });
         if (swipeTimeoutRef.current) clearTimeout(swipeTimeoutRef.current);
         swipeTimeoutRef.current = setTimeout(() => setToastData(null), 1000);
       } else if (event.key === 'ArrowDown') {
         event.preventDefault();
-        setVolume((v) => clamp(v - 10, 0, 100));
-        setToastData({ icon: 'volume', value: clamp(volume - 10, 0, 100) });
+        setVolume((v) => {
+          const next = clamp(v - 10, 0, 100);
+          setToastData({ icon: 'volume', value: next });
+          return next;
+        });
         if (swipeTimeoutRef.current) clearTimeout(swipeTimeoutRef.current);
         swipeTimeoutRef.current = setTimeout(() => setToastData(null), 1000);
       } else if (key === 'm') {
@@ -600,7 +606,7 @@ function PlayerPage() {
       document.removeEventListener('leavepictureinpicture', onPictureInPictureChange);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [activeDuration, content?.type, contentId, persistProgress]);
+  }, [activeDuration, content?.type, contentId, persistProgress, navigate]);
 
   const handleMouseMove = () => {
     setShowControls(true);
@@ -654,7 +660,7 @@ function PlayerPage() {
         if (isMobile && window.screen?.orientation?.lock) {
           await window.screen.orientation.lock('landscape').catch(() => {});
         }
-      } catch (err) {
+      } catch {
         // Ignore fullscreen errors
       }
     } else {
