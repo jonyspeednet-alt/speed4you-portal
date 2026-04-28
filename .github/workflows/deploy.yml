@@ -10,6 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      DEPLOY_REMOTE_BACKEND_PATH: /home/speed4you/backend
+      DEPLOY_REMOTE_FRONTEND_PATH: /home/speed4you/frontend
+      DEPLOY_REMOTE_PID_FILE: /home/speed4you/backend.pid
+      DEPLOY_REMOTE_BACKUP_BASE: /home/speed4you/backups
+      DEPLOY_REMOTE_SERVICE_NAME: speed4you-portal.service
+      DEPLOY_REMOTE_PORT: 5000
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -36,7 +42,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
           source: "server-deploy,scripts/deploy.sh"
-          target: "/home/deploy/staging-area"
+          target: "/home/speed4you/staging-area"
           overwrite: true
 
       - name: Execute remote deployment script
@@ -49,8 +55,8 @@ jobs:
           script: |
             set -e
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-            STAGING_BASE=${DEPLOY_REMOTE_STAGING_BASE:-/home/deploy/portal-deploy-staging}
-            REMOTE_STAGING_AREA="/home/deploy/staging-area"
+            STAGING_BASE=${DEPLOY_REMOTE_STAGING_BASE:-/home/speed4you/portal-deploy-staging}
+            REMOTE_STAGING_AREA="/home/speed4you/staging-area"
             STAGING_ROOT="$STAGING_BASE/$TIMESTAMP"
             
             echo "Creating final deployment directory: $STAGING_ROOT"
@@ -70,12 +76,12 @@ jobs:
             export DEPLOY_ENV_FILE_CONTENT='${{ secrets.DEPLOY_ENV_FILE_CONTENT }}'
             export BACKEND_PATH=${DEPLOY_REMOTE_BACKEND_PATH}
             export FRONTEND_PATH=${DEPLOY_REMOTE_FRONTEND_PATH}
-            export PID_FILE=${DEPLOY_REMOTE_PID_FILE:-/home/deploy/backend.pid}
-            export BACKUP_BASE=${DEPLOY_REMOTE_BACKUP_BASE:-/home/deploy/portal-deploy-backups}
+            export PID_FILE=${DEPLOY_REMOTE_PID_FILE:-/home/speed4you/backend.pid}
+            export BACKUP_BASE=${DEPLOY_REMOTE_BACKUP_BASE:-/home/speed4you/portal-deploy-backups}
             export STAGING_ROOT=$STAGING_ROOT
             export TIMESTAMP=$TIMESTAMP
             export SUDO_PASSWORD='${{ secrets.DEPLOY_SUDO_PASSWORD }}'
-            export SERVICE_NAME=${DEPLOY_REMOTE_SERVICE_NAME:-isp-portal.service}
+            export SERVICE_NAME=${DEPLOY_REMOTE_SERVICE_NAME:-speed4you-portal.service}
             export REMOTE_PORT=${DEPLOY_REMOTE_PORT}
             export REMOTE_CORS_ALLOWED_ORIGINS='${{ secrets.DEPLOY_REMOTE_CORS_ALLOWED_ORIGINS }}'
             export REMOTE_PLAYER_CACHE_ROOT=${DEPLOY_REMOTE_PLAYER_CACHE_ROOT}
