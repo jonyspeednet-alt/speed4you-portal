@@ -28,28 +28,41 @@ jobs:
       - name: Prepare deployment package
         run: node scripts/prepare-deploy.cjs
 
-      - name: Transfer and Execute Deployment
-        uses: appleboy/ssh-action@v1.0.3 # Pinned to a stable version
+      - name: Copy files to server via SCP
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
-          source: "server-deploy/,scripts/deploy.sh"
+          source: "server-deploy,scripts/deploy.sh"
           target: "/home/deploy/staging-area"
+          overwrite: true
+
+      - name: Execute remote deployment script
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
           script: |
             set -e
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
             STAGING_BASE=${DEPLOY_REMOTE_STAGING_BASE:-/home/deploy/portal-deploy-staging}
+            REMOTE_STAGING_AREA="/home/deploy/staging-area"
             STAGING_ROOT="$STAGING_BASE/$TIMESTAMP"
             
-            echo "Moving files from staging-area to $STAGING_ROOT"
+            echo "Creating final deployment directory: $STAGING_ROOT"
             mkdir -p "$STAGING_ROOT"
-            mv /home/deploy/staging-area/server-deploy/dist "$STAGING_ROOT/dist"
-            mv /home/deploy/staging-area/server-deploy/backend "$STAGING_ROOT/backend"
-            mv /home/deploy/staging-area/deploy.sh "$STAGING_ROOT/deploy.sh"
-            
-            rm -rf /home/deploy/staging-area/*
+
+            echo "Moving files from staging area to final directory"
+            mv "$REMOTE_STAGING_AREA/server-deploy/dist" "$STAGING_ROOT/dist"
+            mv "$REMOTE_STAGING_AREA/server-deploy/backend" "$STAGING_ROOT/backend"
+            mv "$REMOTE_STAGING_AREA/deploy.sh" "$STAGING_ROOT/deploy.sh"
+
+            # Clean up the staging area for the next deployment
+            rm -rf "$REMOTE_STAGING_AREA/server-deploy"
 
             chmod +x "$STAGING_ROOT/deploy.sh"
 
