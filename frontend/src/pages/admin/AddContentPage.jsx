@@ -252,10 +252,17 @@ function AddContentPage() {
       setLoading(true);
       setError('');
 
+      const submissionData = {
+        ...formData,
+        tags: typeof formData.tags === 'string' 
+          ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean)
+          : formData.tags
+      };
+
       if (isEditMode) {
-        await adminService.updateContent(id, formData);
+        await adminService.updateContent(id, submissionData);
       } else {
-        await adminService.createContent(formData);
+        await adminService.createContent(submissionData);
       }
 
       navigate('/admin/content');
@@ -272,11 +279,19 @@ function AddContentPage() {
       setError('');
       let targetId = id;
 
+      const submissionData = {
+        ...formData,
+        status: 'published',
+        tags: typeof formData.tags === 'string' 
+          ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean)
+          : formData.tags
+      };
+
       if (isEditMode) {
-        const updated = await adminService.updateContent(id, { ...formData, status: 'published' });
+        const updated = await adminService.updateContent(id, submissionData);
         targetId = updated.id;
       } else {
-        const created = await adminService.createContent({ ...formData, status: 'published' });
+        const created = await adminService.createContent(submissionData);
         targetId = created.id;
       }
 

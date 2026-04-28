@@ -21,11 +21,11 @@ function Kill-PortProcess {
   $connections = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
   if ($connections) {
     $uniquePids = $connections | Select-Object -ExpandProperty OwningProcess -Unique
-    foreach ($pid in $uniquePids) {
-      $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+    foreach ($p in $uniquePids) {
+      $proc = Get-Process -Id $p -ErrorAction SilentlyContinue
       if ($proc -and $proc.ProcessName -ne 'powershell') {
-        Write-Host "Killing existing process $pid on port $Port..."
-        Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+        Write-Host "Killing existing process $p on port $Port..."
+        Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 500
       }
     }

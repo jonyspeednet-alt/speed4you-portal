@@ -737,6 +737,9 @@ router.get('/stream/:contentType/:id', async (req, res, next) => {
     const ext = getSourceExtension(resolvedPath, videoUrl);
 
     if (!resolvedPath) {
+      if (process.env.REMOTE_MEDIA_BASE_URL && videoUrl) {
+        return res.redirect(`${process.env.REMOTE_MEDIA_BASE_URL}${videoUrl}`);
+      }
       throw new AppError('Source file is not available on the server', 404, 'NOT_FOUND');
     }
     const strategy = await determineStreamingStrategy(resolvedPath, ext);

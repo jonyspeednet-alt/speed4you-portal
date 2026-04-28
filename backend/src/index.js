@@ -59,7 +59,7 @@ function buildCorsOriginChecker() {
 }
 
 app.use(helmet({
-  contentSecurityPolicy: {
+  contentSecurityPolicy: isProduction ? {
     directives: {
       defaultSrc: ["'self'"],
       baseUri: ["'self'"],
@@ -71,12 +71,11 @@ app.use(helmet({
       objectSrc: ["'none'"],
       scriptSrc: ["'self'"],
       scriptSrcAttr: ["'none'"],
-      // Removed 'unsafe-inline' — use hashed styles or external stylesheets instead
       styleSrc: ["'self'", 'https:'],
       workerSrc: ["'self'", 'blob:'],
       connectSrc: ["'self'", ...corsOrigins],
     },
-  },
+  } : false,
   // Enforce HTTPS in production
   hsts: isProduction ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
 }));
@@ -158,12 +157,18 @@ app.get('/health/scanner', (req, res) => {
   apiRouter.use('/tv', publicContentLimiter, require('./routes/tv'));
   apiRouter.use('/admin', require('./routes/admin'));
 
-  // Mount at both /api (legacy/dev) and / (proxied production)
+  // Mount at both /api (legacy/dev), / (proxied production), and /portal-api/api (Vite-configured prefix)
   app.use('/api', apiRouter);
+  app.use('/portal-api/api', apiRouter);
   app.use('/', apiRouter);
 
 if (fs.existsSync(frontendDistPath)) {
   // Serve static assets from the frontend build
+  // Support both the /portal prefix (configured in Vite) and the root
+  app.use('/portal', express.static(frontendDistPath, {
+    index: false,
+    setHeaders: setStaticCacheHeaders,
+  }));
   app.use(express.static(frontendDistPath, {
     index: false,
     setHeaders: setStaticCacheHeaders,
