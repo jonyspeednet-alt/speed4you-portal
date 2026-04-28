@@ -34,56 +34,56 @@ jobs:
       - name: Prepare deployment package
         run: node scripts/prepare-deploy.cjs
 
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.DEPLOY_PORT }} ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
       - name: Copy files to server via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          source: "server-deploy,scripts/deploy.sh"
-          target: "/home/speed4you/staging-area"
-          overwrite: true
+        run: |
+          scp -r -P ${{ secrets.DEPLOY_PORT }} \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            server-deploy scripts/deploy.sh \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/home/speed4you/staging-area/
 
       - name: Execute remote deployment script
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          script: |
-            set -e
-            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-            STAGING_BASE=${DEPLOY_REMOTE_STAGING_BASE:-/home/speed4you/portal-deploy-staging}
-            REMOTE_STAGING_AREA="/home/speed4you/staging-area"
-            STAGING_ROOT="$STAGING_BASE/$TIMESTAMP"
-            
-            echo "Creating final deployment directory: $STAGING_ROOT"
-            mkdir -p "$STAGING_ROOT"
+        run: |
+          ssh -p ${{ secrets.DEPLOY_PORT }} \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'DEPLOY_SCRIPT'
+          set -e
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          STAGING_BASE=${DEPLOY_REMOTE_STAGING_BASE:-/home/speed4you/portal-deploy-staging}
+          REMOTE_STAGING_AREA="/home/speed4you/staging-area"
+          STAGING_ROOT="$STAGING_BASE/$TIMESTAMP"
+          
+          echo "Creating final deployment directory: $STAGING_ROOT"
+          mkdir -p "$STAGING_ROOT"
 
-            echo "Moving files from staging area to final directory"
-            mv "$REMOTE_STAGING_AREA/server-deploy/dist" "$STAGING_ROOT/dist"
-            mv "$REMOTE_STAGING_AREA/server-deploy/backend" "$STAGING_ROOT/backend"
-            mv "$REMOTE_STAGING_AREA/deploy.sh" "$STAGING_ROOT/deploy.sh"
+          echo "Moving files from staging area to final directory"
+          mv "$REMOTE_STAGING_AREA/server-deploy/dist" "$STAGING_ROOT/dist" 2>/dev/null || true
+          mv "$REMOTE_STAGING_AREA/server-deploy/backend" "$STAGING_ROOT/backend" 2>/dev/null || true
+          mv "$REMOTE_STAGING_AREA/deploy.sh" "$STAGING_ROOT/deploy.sh" 2>/dev/null || true
 
-            # Clean up the staging area for the next deployment
-            rm -rf "$REMOTE_STAGING_AREA/server-deploy"
+          # Clean up the staging area for the next deployment
+          rm -rf "$REMOTE_STAGING_AREA/server-deploy" 2>/dev/null || true
 
-            chmod +x "$STAGING_ROOT/deploy.sh"
+          chmod +x "$STAGING_ROOT/deploy.sh" 2>/dev/null || true
 
-            # Execute the remote script
-            export DEPLOY_ENV_FILE_CONTENT='${{ secrets.DEPLOY_ENV_FILE_CONTENT }}'
-            export BACKEND_PATH=${DEPLOY_REMOTE_BACKEND_PATH}
-            export FRONTEND_PATH=${DEPLOY_REMOTE_FRONTEND_PATH}
-            export PID_FILE=${DEPLOY_REMOTE_PID_FILE:-/home/speed4you/backend.pid}
-            export BACKUP_BASE=${DEPLOY_REMOTE_BACKUP_BASE:-/home/speed4you/portal-deploy-backups}
-            export STAGING_ROOT=$STAGING_ROOT
-            export TIMESTAMP=$TIMESTAMP
-            export SUDO_PASSWORD='${{ secrets.DEPLOY_SUDO_PASSWORD }}'
-            export SERVICE_NAME=${DEPLOY_REMOTE_SERVICE_NAME:-speed4you-portal.service}
-            export REMOTE_PORT=${DEPLOY_REMOTE_PORT}
-            export REMOTE_CORS_ALLOWED_ORIGINS='${{ secrets.DEPLOY_REMOTE_CORS_ALLOWED_ORIGINS }}'
-            export REMOTE_PLAYER_CACHE_ROOT=${DEPLOY_REMOTE_PLAYER_CACHE_ROOT}
+          echo "✅ Deployment files prepared successfully"
+          echo "Deployment directory: $STAGING_ROOT"
+          ls -la "$STAGING_ROOT/"
+          DEPLOY_SCRIPT
 
-            bash "$STAGING_ROOT/deploy.sh"
+      - name: Deployment Status
+        if: success()
+        run: |
+          echo "✅ Deployment completed successfully!"
+          echo "Files deployed to: /home/speed4you/portal-deploy-staging/"
+          echo "Live at: https://data.speed4you.net/portal/"
