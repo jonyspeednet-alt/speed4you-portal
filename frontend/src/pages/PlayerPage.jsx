@@ -470,7 +470,7 @@ function PlayerPage() {
   const playNextEpisode = useCallback(() => {
     setAutoPlayCountdown(null);
     if (content?.type === 'series') {
-      navigate(`/play/${contentId}?season=${content.season}&episode=${content.episode + 1}`);
+      navigate(`/watch/${contentId}?season=${content.season}&episode=${content.episode + 1}`);
     }
   }, [content, contentId, navigate]);
 
