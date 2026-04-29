@@ -29,7 +29,7 @@ function TopNav() {
   const showLiveChip = isDesktop && width >= 1600;
   const visibleNavItems = isTightDesktop ? navItems.filter((item) => item.path !== '/watchlist') : navItems;
 
-  const user = (() => {
+  const [user] = useState(() => {
     const storedUser = localStorage.getItem('user');
     if (!storedUser) return null;
     try {
@@ -37,7 +37,7 @@ function TopNav() {
     } catch {
       return null;
     }
-  })();
+  });
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 24);

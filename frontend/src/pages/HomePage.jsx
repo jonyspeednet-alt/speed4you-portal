@@ -7,7 +7,7 @@ import QuickViewModal from '../components/ui/QuickViewModal';
 import { contentService, progressService } from '../services';
 import { useBreakpoint, useRecentlyViewed, useTVMode } from '../hooks';
 
-const posterFallback = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400';
+const posterFallback = '/portal/assets/poster-placeholder.svg';
 const RAIL_SIZE = 10;
 const HOMEPAGE_POOL_LIMIT = 40;
 const HOMEPAGE_CACHE_KEY = 'portal-homepage-cache-v2'; // Cache key updated
@@ -78,81 +78,81 @@ function mergePools(...collections) {
 }
 
 function pickFeatured(explicitFeatured, latestItems, popularItems, trendingItems) {
-    const featuredSource = mergePools(latestItems, trendingItems, popularItems);
-    const featuredCandidate = explicitFeatured && explicitFeatured.id ? normalizeItem(explicitFeatured) : null;
-    const rotatedPool = rotateItems(
-        featuredSource.filter(item => item.poster || item.backdrop || item.description),
-        createRotationSeed('featured'),
-        featuredCandidate?.id ? 1 : 0
-    );
+  const featuredSource = mergePools(latestItems, trendingItems, popularItems);
+  const featuredCandidate = explicitFeatured && explicitFeatured.id ? normalizeItem(explicitFeatured) : null;
+  const rotatedPool = rotateItems(
+    featuredSource.filter(item => item.poster || item.backdrop || item.description),
+    createRotationSeed('featured'),
+    featuredCandidate?.id ? 1 : 0
+  );
 
-    if (featuredCandidate?.id) {
-        return [featuredCandidate, ...rotatedPool.filter(item => String(item.id) !== String(featuredCandidate.id))];
-    }
+  if (featuredCandidate?.id) {
+    return [featuredCandidate, ...rotatedPool.filter(item => String(item.id) !== String(featuredCandidate.id))];
+  }
 
-    return rotatedPool.length > 0 ? rotatedPool : (popularItems[0] ? [popularItems[0]] : []);
+  return rotatedPool.length > 0 ? rotatedPool : (popularItems[0] ? [popularItems[0]] : []);
 }
 
 
-function buildHomepageContent({ 
-    featured, latest, popular, trending, series, continueWatching, 
-    recommendations, localTrending, publishedCatalog 
+function buildHomepageContent({
+  featured, latest, popular, trending, series, continueWatching,
+  recommendations, localTrending, publishedCatalog
 }) {
-    const latestItems = (latest || []).map(normalizeItem);
-    const popularItems = (popular || []).map(normalizeItem);
-    const trendingItems = (trending || []).map(normalizeItem);
-    const homepageSeriesItems = (series || []).map(normalizeItem);
-    const publishedItems = (publishedCatalog || []).map(normalizeItem);
-    const recommendationsItems = (recommendations || []).map(normalizeItem);
-    const localTrendingItems = (localTrending || []).map(normalizeItem);
+  const latestItems = (latest || []).map(normalizeItem);
+  const popularItems = (popular || []).map(normalizeItem);
+  const trendingItems = (trending || []).map(normalizeItem);
+  const homepageSeriesItems = (series || []).map(normalizeItem);
+  const publishedItems = (publishedCatalog || []).map(normalizeItem);
+  const recommendationsItems = (recommendations || []).map(normalizeItem);
+  const localTrendingItems = (localTrending || []).map(normalizeItem);
 
-    const moviePool = mergePools(
-        latestItems.filter(item => item.type !== 'series'),
-        trendingItems.filter(item => item.type !== 'series'),
-        popularItems.filter(item => item.type !== 'series'),
-    );
-    const seriesPool = mergePools(
-        homepageSeriesItems,
-        latestItems.filter(item => item.type === 'series'),
-        trendingItems.filter(item => item.type === 'series'),
-        popularItems.filter(item => item.type === 'series'),
-    );
-    const bengaliPool = mergePools(
-        latestItems.filter(item => item.language === 'Bengali'),
-        trendingItems.filter(item => item.language === 'Bengali'),
-        popularItems.filter(item => item.language === 'Bengali'),
-    );
+  const moviePool = mergePools(
+    latestItems.filter(item => item.type !== 'series'),
+    trendingItems.filter(item => item.type !== 'series'),
+    popularItems.filter(item => item.type !== 'series'),
+  );
+  const seriesPool = mergePools(
+    homepageSeriesItems,
+    latestItems.filter(item => item.type === 'series'),
+    trendingItems.filter(item => item.type === 'series'),
+    popularItems.filter(item => item.type === 'series'),
+  );
+  const bengaliPool = mergePools(
+    latestItems.filter(item => item.language === 'Bengali'),
+    trendingItems.filter(item => item.language === 'Bengali'),
+    popularItems.filter(item => item.language === 'Bengali'),
+  );
 
-    const continueWatchingItems = (continueWatching || []).map(item => {
-        const normalized = normalizeItem(item);
-        if (normalized.duration > 0 && normalized.last_position > 0) {
-            normalized.progress = Math.min(99, (normalized.last_position / normalized.duration) * 100);
-        } else {
-            normalized.progress = 0;
-        }
-        return normalized;
-    }).slice(0, 10);
+  const continueWatchingItems = (continueWatching || []).map(item => {
+    const normalized = normalizeItem(item);
+    if (normalized.duration > 0 && normalized.last_position > 0) {
+      normalized.progress = Math.min(99, (normalized.last_position / normalized.duration) * 100);
+    } else {
+      normalized.progress = 0;
+    }
+    return normalized;
+  }).slice(0, 10);
 
-    const continueIds = continueWatchingItems.map(item => item.id);
+  const continueIds = continueWatchingItems.map(item => item.id);
 
-    const featuredPool = publishedItems.length > 0 ? publishedItems : mergePools(latestItems, trendingItems, popularItems, homepageSeriesItems);
-    const featuredItems = pickFeatured(featured, featuredPool, [], []);
-    const featuredIds = featuredItems.slice(0, 5).map(item => item.id);
+  const featuredPool = publishedItems.length > 0 ? publishedItems : mergePools(latestItems, trendingItems, popularItems, homepageSeriesItems);
+  const featuredItems = pickFeatured(featured, featuredPool, [], []);
+  const featuredIds = featuredItems.slice(0, 5).map(item => item.id);
 
-    const excludeIds = [...continueIds, ...featuredIds];
+  const excludeIds = [...continueIds, ...featuredIds];
 
-    return {
-        featured: featuredItems,
-        continueWatching: continueWatchingItems,
-        recommendations: buildRail(recommendationsItems, { seed: createRotationSeed('recommendations'), size: RAIL_SIZE, excludeIds }),
-        localTrending: buildRail(localTrendingItems, { seed: createRotationSeed('local-trending'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
-        trending: buildRail(trendingItems, { seed: createRotationSeed('trending'), size: RAIL_SIZE, excludeIds, pinnedCount: 3 }),
-        latest: buildRail(latestItems, { seed: createRotationSeed('latest'), size: RAIL_SIZE, excludeIds, pinnedCount: 4 }),
-        popular: buildRail(popularItems, { seed: createRotationSeed('popular'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
-        movies: buildRail(moviePool, { seed: createRotationSeed('movies'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
-        series: buildRail(seriesPool, { seed: createRotationSeed('series'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
-        bengali: buildRail(bengaliPool, { seed: createRotationSeed('bengali'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
-    };
+  return {
+    featured: featuredItems,
+    continueWatching: continueWatchingItems,
+    recommendations: buildRail(recommendationsItems, { seed: createRotationSeed('recommendations'), size: RAIL_SIZE, excludeIds }),
+    localTrending: buildRail(localTrendingItems, { seed: createRotationSeed('local-trending'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
+    trending: buildRail(trendingItems, { seed: createRotationSeed('trending'), size: RAIL_SIZE, excludeIds, pinnedCount: 3 }),
+    latest: buildRail(latestItems, { seed: createRotationSeed('latest'), size: RAIL_SIZE, excludeIds, pinnedCount: 4 }),
+    popular: buildRail(popularItems, { seed: createRotationSeed('popular'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
+    movies: buildRail(moviePool, { seed: createRotationSeed('movies'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
+    series: buildRail(seriesPool, { seed: createRotationSeed('series'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
+    bengali: buildRail(bengaliPool, { seed: createRotationSeed('bengali'), size: RAIL_SIZE, excludeIds, pinnedCount: 2 }),
+  };
 }
 
 function readHomepageCache() {
@@ -163,8 +163,8 @@ function readHomepageCache() {
     const cache = JSON.parse(raw);
     // Basic cache validation
     if (Date.now() - new Date(cache.generatedAt).getTime() > 4 * 60 * 60 * 1000) {
-        sessionStorage.removeItem(HOMEPAGE_CACHE_KEY);
-        return null;
+      sessionStorage.removeItem(HOMEPAGE_CACHE_KEY);
+      return null;
     }
     return cache;
   } catch {
@@ -182,20 +182,20 @@ function writeHomepageCache(value) {
 }
 
 async function fetchAllPublishedCatalog() {
-    const limit = 150;
-    let page = 1;
-    let hasMore = true;
-    const allItems = [];
+  const limit = 150;
+  let page = 1;
+  let hasMore = true;
+  const allItems = [];
 
-    while (hasMore) {
-        const response = await contentService.browse({ page, limit, sort: 'latest' }).catch(() => ({ items: [], hasMore: false }));
-        allItems.push(...(response?.items || []));
-        hasMore = Boolean(response?.hasMore) && (response?.items?.length || 0) > 0;
-        page += 1;
-        if (page > 5) hasMore = false; // Safety break
-    }
+  while (hasMore) {
+    const response = await contentService.browse({ page, limit, sort: 'latest' }).catch(() => ({ items: [], hasMore: false }));
+    allItems.push(...(response?.items || []));
+    hasMore = Boolean(response?.hasMore) && (response?.items?.length || 0) > 0;
+    page += 1;
+    if (page > 5) hasMore = false; // Safety break
+  }
 
-    return uniqueById(allItems);
+  return uniqueById(allItems);
 }
 
 
@@ -211,44 +211,44 @@ function HomePage() {
     let cancelled = false;
 
     async function fetchHomepageData() {
-        if (cancelled) return;
-        setLoading(true);
+      if (cancelled) return;
+      setLoading(true);
 
-        try {
-            const continueWatchingResponse = await progressService.getContinueWatching().catch(() => ({ items: [] }));
-            const seedContentId = continueWatchingResponse?.items?.[0]?.id || recentlyViewed?.[0]?.id || '';
+      try {
+        const continueWatchingResponse = await progressService.getContinueWatching().catch(() => ({ items: [] }));
+        const seedContentId = continueWatchingResponse?.items?.[0]?.id || recentlyViewed?.[0]?.id || '';
 
-            const [homepageResponse, recommendations, localTrending, publishedCatalog] = await Promise.all([
-                contentService.getHomepage(HOMEPAGE_POOL_LIMIT).catch(() => ({})),
-                seedContentId ? contentService.getRecommendations(seedContentId).catch(() => []) : Promise.resolve([]),
-                contentService.getLocalTrending().catch(() => []),
-                fetchAllPublishedCatalog(),
-            ]);
+        const [homepageResponse, recommendations, localTrending, publishedCatalog] = await Promise.all([
+          contentService.getHomepage(HOMEPAGE_POOL_LIMIT).catch(() => ({})),
+          seedContentId ? contentService.getRecommendations(seedContentId).catch(() => []) : Promise.resolve([]),
+          contentService.getLocalTrending().catch(() => []),
+          fetchAllPublishedCatalog(),
+        ]);
 
-            const nextContent = buildHomepageContent({
-                ...homepageResponse,
-                continueWatching: continueWatchingResponse?.items,
-                recommendations,
-                localTrending,
-                publishedCatalog
-            });
+        const nextContent = buildHomepageContent({
+          ...homepageResponse,
+          continueWatching: continueWatchingResponse?.items,
+          recommendations,
+          localTrending,
+          publishedCatalog
+        });
 
-            if (!cancelled) {
-                setContent(nextContent);
-                writeHomepageCache({ content: nextContent, generatedAt: new Date().toISOString() });
-            }
-        } catch (error) {
-            console.error('Failed to fetch homepage data:', error);
-        } finally {
-            if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setContent(nextContent);
+          writeHomepageCache({ content: nextContent, generatedAt: new Date().toISOString() });
         }
+      } catch (error) {
+        console.error('Failed to fetch homepage data:', error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
 
     fetchHomepageData();
     return () => {
       cancelled = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hasFeaturedHero = Array.isArray(content.featured) && content.featured.length > 0;
@@ -259,27 +259,27 @@ function HomePage() {
 
       <div style={{ ...styles.content, ...(isTVMode ? styles.contentTV : {}), ...(isMobile ? styles.contentMobile : {}) }}>
         {loading && Object.keys(content).length === 0 ? (
-            <div style={styles.loadingNote}>Building your portal...</div>
+          <div style={styles.loadingNote}>Building your portal...</div>
         ) : null}
 
         <ContinueWatchingRail items={content.continueWatching} isLoading={loading && !content.continueWatching} />
 
         {content.recommendations?.length > 0 ? (
-            <ContentRail 
-                onQuickView={setQuickViewItem} 
-                title="Because you watched..." 
-                subtitle="More of what you like"
-                items={content.recommendations} 
-            />
+          <ContentRail
+            onQuickView={setQuickViewItem}
+            title="Because you watched..."
+            subtitle="More of what you like"
+            items={content.recommendations}
+          />
         ) : null}
 
         {content.localTrending?.length > 3 ? (
-            <ContentRail 
-                onQuickView={setQuickViewItem} 
-                title="Trending Near You" 
-                subtitle="Popular in your area"
-                items={content.localTrending} 
-            />
+          <ContentRail
+            onQuickView={setQuickViewItem}
+            title="Trending Near You"
+            subtitle="Popular in your area"
+            items={content.localTrending}
+          />
         ) : null}
 
         {content.trending?.length >= 5 ? (

@@ -297,7 +297,10 @@ exports.getDbHealth = async (req, res) => {
 };
 
 exports.getMediaNormalizerStatus = async (req, res) => {
-  res.json(await getMediaNormalizerStatus());
+  const status = await getMediaNormalizerStatus();
+  // Strip internal lock (contains PID) before sending to client
+  const { lock: _lock, ...safeStatus } = status;
+  res.json(safeStatus);
 };
 
 exports.startMediaNormalizer = async (req, res) => {

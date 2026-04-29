@@ -20,21 +20,21 @@ function MainSiteLayout() {
 
   useEffect(() => {
     if (!isTVMode) return;
-    
+
     const handleGlobalBack = (e) => {
       if (e.key === 'Backspace' || e.key === 'Escape') {
         const activeTag = document.activeElement?.tagName;
         if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') {
           return;
         }
-        
+
         if (location.pathname !== '/') {
           e.preventDefault();
           navigate(-1);
         }
       }
     };
-    
+
     window.addEventListener('keydown', handleGlobalBack);
     return () => window.removeEventListener('keydown', handleGlobalBack);
   }, [isTVMode, location.pathname, navigate]);

@@ -254,7 +254,7 @@ function AddContentPage() {
 
       const submissionData = {
         ...formData,
-        tags: typeof formData.tags === 'string' 
+        tags: typeof formData.tags === 'string'
           ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean)
           : formData.tags
       };
@@ -282,7 +282,7 @@ function AddContentPage() {
       const submissionData = {
         ...formData,
         status: 'published',
-        tags: typeof formData.tags === 'string' 
+        tags: typeof formData.tags === 'string'
           ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean)
           : formData.tags
       };
@@ -295,8 +295,8 @@ function AddContentPage() {
         targetId = created.id;
       }
 
-      navigate('/admin/content');
       await refreshItemMeta(targetId);
+      navigate('/admin/content');
     } catch (err) {
       setError(err.message || 'Failed to publish content.');
     } finally {
@@ -717,83 +717,88 @@ function AddContentPage() {
   );
 }
 
+const ACCENT = '#6366f1';
+const ACCENT_LIGHT = 'rgba(99,102,241,0.1)';
+const ACCENT_BORDER = 'rgba(99,102,241,0.25)';
+const SURFACE = '#111318';
+const SURFACE2 = '#181b22';
+const BORDER = 'rgba(255,255,255,0.07)';
+const TEXT = '#f1f5f9';
+const TEXT2 = '#94a3b8';
+const TEXT3 = '#475569';
+
 const styles = {
-  page: { display: 'grid', gap: '22px' },
+  page: { display: 'grid', gap: '20px' },
   header: {
-    padding: '28px',
-    borderRadius: '34px',
-    background: 'linear-gradient(135deg, rgba(11,24,42,0.9), rgba(19,38,62,0.76))',
-    border: '1px solid rgba(125,249,255,0.12)',
+    padding: '20px 24px',
+    borderRadius: '10px',
+    background: SURFACE,
+    border: `1px solid ${BORDER}`,
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.2fr) minmax(260px, 0.8fr)',
+    gridTemplateColumns: 'minmax(0, 1.2fr) minmax(240px, 0.8fr)',
     gap: '20px',
-    alignItems: 'end',
+    alignItems: 'center',
   },
-  headerTablet: {
-    gridTemplateColumns: '1fr',
-  },
-  headerMobile: {
-    padding: '20px',
-    gridTemplateColumns: '1fr',
-  },
-  headerCopy: { display: 'grid', gap: '10px' },
-  back: { color: 'var(--accent-cyan)', display: 'inline-block', fontWeight: '700' },
-  title: { fontSize: '2.2rem', color: 'var(--text-primary)' },
-  subtitle: { maxWidth: '56ch', lineHeight: '1.8' },
-  statusRail: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px' },
-  statusCard: { padding: '18px', borderRadius: '22px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '8px' },
-  statusLabel: { fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--text-muted)', fontWeight: '700' },
-  statusValue: { color: 'var(--accent-amber)', textTransform: 'capitalize' },
-  section: { padding: '24px', borderRadius: '28px', background: 'linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03))', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '18px' },
-  metaGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' },
-  metaList: { display: 'grid', gap: '10px', color: 'var(--text-secondary)', lineHeight: '1.7' },
-  duplicateList: { display: 'grid', gap: '10px' },
-  duplicateCard: { padding: '14px 16px', borderRadius: '18px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)', color: 'var(--text-primary)', display: 'grid', gap: '4px' },
-  okBox: { padding: '14px 16px', borderRadius: '18px', background: 'rgba(34, 197, 94, 0.12)', color: '#86efac' },
-  infoBox: { padding: '14px 16px', borderRadius: '18px', background: 'rgba(56, 189, 248, 0.1)', color: '#bfe9ff', border: '1px solid rgba(56, 189, 248, 0.22)' },
-  errorBox: { padding: '14px 18px', borderRadius: '18px', background: 'rgba(255, 90, 95, 0.12)', color: '#ff8a8a', border: '1px solid rgba(255, 90, 95, 0.24)' },
-  form: { display: 'grid', gap: '20px' },
-  contentGrid: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(300px, 0.75fr)', gap: '20px', alignItems: 'start' },
+  headerTablet: { gridTemplateColumns: '1fr' },
+  headerMobile: { padding: '16px', gridTemplateColumns: '1fr' },
+  headerCopy: { display: 'grid', gap: '8px' },
+  back: { color: ACCENT, display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '500', fontSize: '0.85rem' },
+  title: { fontSize: '1.4rem', fontWeight: '700', color: TEXT, margin: 0 },
+  subtitle: { maxWidth: '56ch', lineHeight: '1.7', color: TEXT2, fontSize: '0.85rem' },
+  statusRail: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px' },
+  statusCard: { padding: '12px 14px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}`, display: 'grid', gap: '4px' },
+  statusLabel: { fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: TEXT3, fontWeight: '600' },
+  statusValue: { color: TEXT, fontWeight: '600', fontSize: '0.9rem', textTransform: 'capitalize' },
+  section: { padding: '20px', borderRadius: '10px', background: SURFACE, border: `1px solid ${BORDER}`, display: 'grid', gap: '16px' },
+  metaGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' },
+  metaList: { display: 'grid', gap: '8px', color: TEXT2, lineHeight: '1.7', fontSize: '0.875rem' },
+  duplicateList: { display: 'grid', gap: '8px' },
+  duplicateCard: { padding: '12px 14px', borderRadius: '8px', border: `1px solid ${BORDER}`, background: SURFACE2, color: TEXT, display: 'grid', gap: '4px', textDecoration: 'none' },
+  okBox: { padding: '10px 14px', borderRadius: '8px', background: 'rgba(34,197,94,0.08)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.15)', fontSize: '0.85rem' },
+  infoBox: { padding: '10px 14px', borderRadius: '8px', background: ACCENT_LIGHT, color: '#a5b4fc', border: `1px solid ${ACCENT_BORDER}`, fontSize: '0.85rem' },
+  errorBox: { padding: '10px 14px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.15)', fontSize: '0.85rem' },
+  form: { display: 'grid', gap: '16px' },
+  contentGrid: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(280px, 0.75fr)', gap: '16px', alignItems: 'start' },
   contentGridMobile: { gridTemplateColumns: '1fr' },
-  formStack: { display: 'grid', gap: '20px' },
-  assetRail: { display: 'grid', gap: '20px', position: 'sticky', top: '22px' },
+  formStack: { display: 'grid', gap: '16px' },
+  assetRail: { display: 'grid', gap: '16px', position: 'sticky', top: '80px' },
   assetRailMobile: { position: 'static', top: 'auto' },
-  tmdbRow: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '16px', alignItems: 'end' },
+  tmdbRow: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '12px', alignItems: 'end' },
   tmdbRowMobile: { gridTemplateColumns: '1fr' },
-  tmdbActions: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
-  tmdbPreviewCard: { padding: '14px 16px', borderRadius: '18px', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.18)', display: 'grid', gap: '6px', color: 'var(--text-primary)' },
-  sectionEyebrow: { color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.14em', fontSize: '0.72rem', fontWeight: '700' },
-  row: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' },
-  field: { display: 'flex', flexDirection: 'column', gap: '8px' },
-  label: { fontSize: '0.86rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' },
-  input: { padding: '14px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', color: 'var(--text-primary)', fontSize: '0.98rem' },
-  select: { padding: '14px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', color: 'var(--text-primary)', fontSize: '0.98rem' },
-  textarea: { padding: '14px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', color: 'var(--text-primary)', fontSize: '0.98rem', resize: 'vertical' },
-  uploadBtn: { padding: '12px 16px', borderRadius: '16px', background: 'rgba(255,255,255,0.08)', color: 'var(--text-primary)', fontWeight: '700', textAlign: 'center', cursor: 'pointer' },
+  tmdbActions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
+  tmdbPreviewCard: { padding: '12px 14px', borderRadius: '8px', background: ACCENT_LIGHT, border: `1px solid ${ACCENT_BORDER}`, display: 'grid', gap: '4px', color: TEXT, fontSize: '0.85rem' },
+  sectionEyebrow: { color: TEXT3, textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '0.68rem', fontWeight: '700' },
+  row: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' },
+  field: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  label: { fontSize: '0.75rem', fontWeight: '600', color: TEXT3, textTransform: 'uppercase', letterSpacing: '0.07em' },
+  input: { padding: '9px 12px', background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: '8px', color: TEXT, fontSize: '0.875rem' },
+  select: { padding: '9px 12px', background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: '8px', color: TEXT, fontSize: '0.875rem' },
+  textarea: { padding: '9px 12px', background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: '8px', color: TEXT, fontSize: '0.875rem', resize: 'vertical' },
+  uploadBtn: { padding: '9px 14px', borderRadius: '8px', background: SURFACE2, color: TEXT2, fontWeight: '600', textAlign: 'center', cursor: 'pointer', border: `1px solid ${BORDER}`, fontSize: '0.82rem' },
   hiddenInput: { display: 'none' },
-  previewStage: { display: 'grid', gap: '14px' },
-  previewImage: { width: '100%', maxWidth: '180px', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: '16px' },
+  previewStage: { display: 'grid', gap: '12px' },
+  previewImage: { width: '100%', maxWidth: '160px', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: '8px' },
   previewImageMobile: { maxWidth: '100%' },
-  previewWideImage: { width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', borderRadius: '16px' },
-  posterFallback: { width: '100%', maxWidth: '180px', aspectRatio: '2 / 3', borderRadius: '16px', background: 'rgba(255,255,255,0.05)', display: 'grid', placeItems: 'center', color: 'var(--text-muted)' },
-  backdropFallback: { width: '100%', aspectRatio: '16 / 9', borderRadius: '16px', background: 'rgba(255,255,255,0.05)', display: 'grid', placeItems: 'center', color: 'var(--text-muted)' },
-  checklist: { display: 'grid', gap: '10px' },
-  seasonEditorStack: { display: 'grid', gap: '16px' },
-  seasonCard: { display: 'grid', gap: '16px', padding: '18px', borderRadius: '22px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' },
-  seasonHeader: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' },
-  seasonTitle: { color: 'var(--text-primary)' },
-  seasonMeta: { color: 'var(--text-muted)', fontSize: '0.86rem' },
-  episodeEditorList: { display: 'grid', gap: '14px' },
-  episodeEditorCard: { display: 'grid', gap: '14px', padding: '16px', borderRadius: '18px', background: 'rgba(9,18,33,0.46)', border: '1px solid rgba(255,255,255,0.06)' },
-  episodeEditorHeader: { display: 'grid', gap: '4px' },
-  episodeEditorHint: { color: 'var(--text-muted)', lineHeight: '1.5', wordBreak: 'break-all' },
-  checkItem: { display: 'flex', gap: '10px', alignItems: 'center', color: 'var(--text-secondary)' },
-  checkOk: { color: '#86efac' },
-  checkMuted: { color: 'var(--text-muted)' },
-  actions: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
-  secondaryBtn: { padding: '15px 24px', background: 'rgba(255,255,255,0.08)', color: 'var(--text-primary)', borderRadius: '999px', fontWeight: '700' },
-  submitBtn: { padding: '15px 28px', background: 'linear-gradient(135deg, #ff744f, #ffb347)', color: '#fff', borderRadius: '999px', fontWeight: '700', fontSize: '1rem', boxShadow: '0 12px 30px rgba(255,90,95,0.24)' },
-  deleteBtn: { padding: '15px 24px', background: 'rgba(255, 90, 95, 0.14)', color: '#ff9ea2', borderRadius: '999px', fontWeight: '700', border: '1px solid rgba(255, 90, 95, 0.28)' },
+  previewWideImage: { width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', borderRadius: '8px' },
+  posterFallback: { width: '100%', maxWidth: '160px', aspectRatio: '2 / 3', borderRadius: '8px', background: SURFACE2, display: 'grid', placeItems: 'center', color: TEXT3, fontSize: '0.75rem', border: `1px solid ${BORDER}` },
+  backdropFallback: { width: '100%', aspectRatio: '16 / 9', borderRadius: '8px', background: SURFACE2, display: 'grid', placeItems: 'center', color: TEXT3, fontSize: '0.75rem', border: `1px solid ${BORDER}` },
+  checklist: { display: 'grid', gap: '8px' },
+  seasonEditorStack: { display: 'grid', gap: '12px' },
+  seasonCard: { display: 'grid', gap: '12px', padding: '14px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}` },
+  seasonHeader: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', flexWrap: 'wrap' },
+  seasonTitle: { color: TEXT, fontWeight: '600', fontSize: '0.875rem' },
+  seasonMeta: { color: TEXT3, fontSize: '0.8rem' },
+  episodeEditorList: { display: 'grid', gap: '10px' },
+  episodeEditorCard: { display: 'grid', gap: '10px', padding: '12px', borderRadius: '8px', background: '#0a0c10', border: `1px solid ${BORDER}` },
+  episodeEditorHeader: { display: 'grid', gap: '3px' },
+  episodeEditorHint: { color: TEXT3, lineHeight: '1.5', wordBreak: 'break-all', fontSize: '0.75rem' },
+  checkItem: { display: 'flex', gap: '8px', alignItems: 'center', color: TEXT2, fontSize: '0.85rem' },
+  checkOk: { color: '#4ade80' },
+  checkMuted: { color: TEXT3 },
+  actions: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
+  secondaryBtn: { padding: '10px 20px', background: SURFACE2, color: TEXT, borderRadius: '8px', fontWeight: '600', border: `1px solid ${BORDER}`, cursor: 'pointer', fontSize: '0.875rem' },
+  submitBtn: { padding: '10px 22px', background: ACCENT, color: '#fff', borderRadius: '8px', fontWeight: '600', fontSize: '0.875rem', cursor: 'pointer', border: 'none' },
+  deleteBtn: { padding: '10px 20px', background: 'rgba(239,68,68,0.08)', color: '#f87171', borderRadius: '8px', fontWeight: '600', border: '1px solid rgba(239,68,68,0.15)', cursor: 'pointer', fontSize: '0.875rem' },
 };
 
 export default AddContentPage;

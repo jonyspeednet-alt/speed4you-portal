@@ -17,8 +17,10 @@ export const contentService = {
   getLatest: (limit = 10) => apiClient(`/content/latest?limit=${limit}`),
   getPopular: (limit = 10) => apiClient(`/content/popular?limit=${limit}`),
   getTrending: (limit = 10) => apiClient(`/content/trending?limit=${limit}`),
-  getRecommendations: (seedContentId, limit = 10) => apiClient(`/content/recommendations?seed=${seedContentId}&limit=${limit}`),
-  getLocalTrending: (limit = 10) => apiClient(`/content/local-trending?limit=${limit}`),
+  // Recommendations: fall back to trending since no dedicated endpoint exists
+  getRecommendations: (seedContentId, limit = 10) => apiClient(`/content/trending?limit=${limit}`),
+  // Local trending: fall back to trending
+  getLocalTrending: (limit = 10) => apiClient(`/content/trending?limit=${limit}`),
   browse: (params) => apiClient(`/content/browse?${toQueryString(params)}`),
   getHomepage: () => apiClient('/content/homepage'),
   // Query-friendly methods for React Query
@@ -36,9 +38,10 @@ export const contentService = {
   fetchLatest: (limit = 10) => apiClient(`/content/latest?limit=${limit}`),
   fetchPopular: (limit = 10) => apiClient(`/content/popular?limit=${limit}`),
   fetchTrending: (limit = 10) => apiClient(`/content/trending?limit=${limit}`),
-  fetchRecommendations: (seedContentId, limit = 10) => apiClient(`/content/recommendations?seed=${seedContentId}&limit=${limit}`),
-  fetchLocalTrending: (limit = 10) => apiClient(`/content/local-trending?limit=${limit}`),
-
+  // Recommendations: fall back to trending since no dedicated endpoint exists
+  fetchRecommendations: (seedContentId, limit = 10) => apiClient(`/content/trending?limit=${limit}`),
+  // Local trending: fall back to trending
+  fetchLocalTrending: (limit = 10) => apiClient(`/content/trending?limit=${limit}`),
 };
 
 export default contentService;

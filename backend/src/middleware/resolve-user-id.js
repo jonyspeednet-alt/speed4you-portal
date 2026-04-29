@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { getJwtSecret } = require('../config/auth');
 
-const JWT_SECRET = getJwtSecret();
 const REQUIRE_USER_AUTH_FOR_STATE = String(process.env.REQUIRE_USER_AUTH_FOR_STATE || '0') === '1';
 
 function resolveUserId(req) {
@@ -15,7 +14,7 @@ function resolveUserId(req) {
     const token = authHeader.slice(7).trim();
     if (token) {
       try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, getJwtSecret());
         if (decoded && decoded.id) {
           return `user:${decoded.id}`;
         }

@@ -12,7 +12,7 @@ const ALLOWED_HOSTS = new Set(
     .filter(Boolean),
 );
 const ALLOWED_PORTS = new Set(
-  String(process.env.TV_ALLOWED_PORTS || ',80,8082')
+  String(process.env.TV_ALLOWED_PORTS || '80,8082,')
     .split(',')
     .map((p) => p.trim()),
 );

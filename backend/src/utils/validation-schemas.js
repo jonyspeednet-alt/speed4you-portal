@@ -47,10 +47,13 @@ const bulkUpdateSchema = Joi.object({
   ids: Joi.array().items(Joi.alternatives().try(Joi.number(), Joi.string())).min(1).required(),
   changes: Joi.object({
     status: Joi.string().valid('published', 'draft'),
-    category: Joi.string(),
-    language: Joi.string(),
+    category: Joi.string().allow(''),
+    language: Joi.string().allow(''),
     featured: Joi.boolean(),
     collection: Joi.string().allow(''),
+    tags: Joi.array().items(Joi.string()).allow(null),
+    adminNotes: Joi.string().allow('', null),
+    featuredOrder: Joi.number().integer().allow(null),
   }).min(1).required(),
 });
 

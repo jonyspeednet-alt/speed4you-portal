@@ -1,8 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { getJwtSecret } = require('../config/auth');
 
-const SECRET = getJwtSecret();
-
 function requireAdminAuth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
@@ -12,7 +10,7 @@ function requireAdminAuth(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
     req.user = decoded;
     return next();
   } catch {

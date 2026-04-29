@@ -318,6 +318,7 @@ p {
     transform: scale(0.98) translateY(10px);
     filter: blur(10px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -330,6 +331,7 @@ p {
     opacity: 0;
     transform: translateY(40px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -340,6 +342,7 @@ p {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -352,6 +355,7 @@ p {
 }
 
 @keyframes livePulse {
+
   0%,
   100% {
     opacity: 1;
@@ -480,9 +484,11 @@ p {
     min-height: 48px;
     min-width: 48px;
   }
-  
-  .mobile-hide { display: none !important; }
-  
+
+  .mobile-hide {
+    display: none !important;
+  }
+
   .mobile-stack {
     display: flex;
     flex-direction: column;
@@ -509,18 +515,27 @@ p {
   transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
 }
 
-.tv-mode .tv-hide { display: none !important; }
-
-.tv-mode body {
-  font-size: 1.2rem; /* Scale up for distance viewing */
+.tv-mode .tv-hide {
+  display: none !important;
 }
 
-.tv-mode h1 { font-size: 5rem; }
-.tv-mode h2 { font-size: 3rem; }
+.tv-mode body {
+  font-size: 1.2rem;
+  /* Scale up for distance viewing */
+}
 
-.tv-mode .glass, 
+.tv-mode h1 {
+  font-size: 5rem;
+}
+
+.tv-mode h2 {
+  font-size: 3rem;
+}
+
+.tv-mode .glass,
 .tv-mode .glass-strong {
-  background: rgba(5, 12, 22, 0.95) !important; /* Higher contrast for TV */
+  background: rgba(5, 12, 22, 0.95) !important;
+  /* Higher contrast for TV */
   backdrop-filter: none !important;
 }
 
@@ -529,16 +544,19 @@ p {
   .desktop-hover-effect {
     transition: all 0.3s ease;
   }
-  
+
   .desktop-hover-effect:hover {
     transform: translateY(-8px);
     filter: brightness(1.1);
   }
 
-  .desktop-hide { display: none !important; }
+  .desktop-hide {
+    display: none !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -546,5 +564,17 @@ p {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
   }
 }

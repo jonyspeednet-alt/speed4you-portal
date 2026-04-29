@@ -104,7 +104,9 @@ async function getDuplicateGroupsForItems(items = []) {
   const params = [];
 
   keys.forEach((key) => {
-    const [type, titleKey] = key.split(':');
+    const colonIndex = key.indexOf(':');
+    const type = key.slice(0, colonIndex);
+    const titleKey = key.slice(colonIndex + 1);
     params.push(type);
     const typeIndex = params.length;
     params.push(titleKey);

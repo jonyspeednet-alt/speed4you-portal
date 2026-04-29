@@ -71,12 +71,17 @@ router.post('/', requireStateUser, async (req, res, next) => {
       throw new AppError('contentType and contentId required', 400, 'BAD_REQUEST');
     }
 
-    const item = await getItemById(contentId);
+    const numericContentId = Number(contentId);
+    if (!Number.isFinite(numericContentId) || numericContentId <= 0) {
+      throw new AppError('contentId must be a positive number', 400, 'BAD_REQUEST');
+    }
+
+    const item = await getItemById(numericContentId);
     if (!item) {
       throw new AppError('Content not found', 404, 'NOT_FOUND');
     }
 
-    const created = await addWatchlistEntry(userId, contentType, contentId);
+    const created = await addWatchlistEntry(userId, contentType, numericContentId);
     if (!created) {
       throw new AppError('Already in watchlist', 409, 'CONFLICT');
     }

@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const { getItemById } = require('../data/store');
 const { loadScannerRoots } = require('../data/store');
 const { AppError } = require('../utils/error');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 const DEFAULT_PLAYER_CACHE_ROOT = '/var/www/html/Extra_Storage/portal-media-cache';
@@ -69,12 +70,12 @@ async function findSelectedMedia(req) {
 
   const selectedSeason = item.type === 'series'
     ? (item.seasons || []).find((season, index) => toPositiveInt(season?.number ?? season?.id, index + 1) === seasonNumber)
-      || item.seasons?.[0]
+    || item.seasons?.[0]
     : null;
   const selectedEpisode = item.type === 'series'
     ? (selectedSeason?.episodes || []).find((episode, index) => toPositiveInt(episode?.number ?? episode?.id, index + 1) === episodeNumber)
-      || selectedSeason?.episodes?.[episodeNumber - 1]
-      || selectedSeason?.episodes?.[0]
+    || selectedSeason?.episodes?.[episodeNumber - 1]
+    || selectedSeason?.episodes?.[0]
     : null;
 
   const videoUrl = item.type === 'movie' ? item.videoUrl : selectedEpisode?.videoUrl;
@@ -334,7 +335,7 @@ function transcodeToMp4(resolvedPath, res) {
   ffmpeg.stdout.pipe(res);
 
   ffmpeg.stderr.on('data', (chunk) => {
-    console.error(`ffmpeg: ${chunk.toString('utf8')}`);
+    logger.warn('ffmpeg stderr: ' + chunk.toString('utf8').trim());
   });
 
   ffmpeg.on('error', (error) => {
@@ -548,7 +549,7 @@ async function determineStreamingStrategy(resolvedPath, extension) {
   try {
     return pickStreamingStrategy(await probeMedia(resolvedPath), extension);
   } catch (error) {
-    console.error(error);
+    logger.error('Player error: ' + (error?.message || error));
     return {
       mode: 'transcode',
       videoCodec: '',
@@ -623,7 +624,7 @@ function ensureOptimizedCache(selection, resolvedPath, strategy) {
     });
 
     ffmpeg.stderr.on('data', (chunk) => {
-      console.error(`ffmpeg-cache: ${chunk.toString('utf8')}`);
+      logger.warn('ffmpeg-cache stderr: ' + chunk.toString('utf8').trim());
     });
 
     ffmpeg.on('error', reject);
@@ -635,7 +636,7 @@ function ensureOptimizedCache(selection, resolvedPath, strategy) {
           if (fs.existsSync(tempPath)) {
             fs.unlinkSync(tempPath);
           }
-        } catch {}
+        } catch { }
         reject(new Error(`ffmpeg cache exited with code ${code}`));
         return;
       }
@@ -662,7 +663,7 @@ function streamFfmpegMp4(resolvedPath, res, ffmpegArgs) {
   ffmpeg.stdout.pipe(res);
 
   ffmpeg.stderr.on('data', (chunk) => {
-    console.error(`ffmpeg: ${chunk.toString('utf8')}`);
+    logger.warn('ffmpeg stderr: ' + chunk.toString('utf8').trim());
   });
 
   ffmpeg.on('error', (error) => {
@@ -773,7 +774,6 @@ router.get('/stream/:contentType/:id', async (req, res, next) => {
 
     transcodeToMp4(resolvedPath, res);
   } catch (error) {
-    console.error(error);
     if (!res.headersSent) {
       next(error);
     }
@@ -795,36 +795,36 @@ router.get('/:contentType/:id', async (req, res, next) => {
       ? await determineStreamingStrategy(resolvedPath, ext)
       : { mode: 'transcode' };
 
-  const cachePath = resolvedPath && strategy.mode !== 'direct'
-    ? buildCacheOutputPath(selection)
-    : '';
-  const optimizedReady = cachePath
-    ? ((fs.existsSync(cachePath) ? safeStat(cachePath) : null)?.size > 1024 * 1024)
-    : true;
-  const streamUrl = `/api/player/stream/${encodeURIComponent(req.params.contentType)}/${encodeURIComponent(req.params.id)}?${new URLSearchParams({
-    season: String(req.query.season || 1),
-    episode: String(req.query.episode || 1),
-  }).toString()}`;
-
-  res.json({
-    sources: [
-      {
-        url: streamUrl,
-        quality: selection.item.quality || 'auto',
-        label: selection.item.quality || 'Auto',
-        delivery: strategy.mode,
-        originalExtension: ext || 'unknown',
-        available: Boolean(resolvedPath),
-        optimizedReady,
-      },
-    ],
-    subtitles: [],
-    preparePath: `/api/player/prepare/${encodeURIComponent(req.params.contentType)}/${encodeURIComponent(req.params.id)}?${new URLSearchParams({
+    const cachePath = resolvedPath && strategy.mode !== 'direct'
+      ? buildCacheOutputPath(selection)
+      : '';
+    const optimizedReady = cachePath
+      ? ((fs.existsSync(cachePath) ? safeStat(cachePath) : null)?.size > 1024 * 1024)
+      : true;
+    const streamUrl = `/api/player/stream/${encodeURIComponent(req.params.contentType)}/${encodeURIComponent(req.params.id)}?${new URLSearchParams({
       season: String(req.query.season || 1),
       episode: String(req.query.episode || 1),
-    }).toString()}`,
-    ...buildMetadata(selection),
-  });
+    }).toString()}`;
+
+    res.json({
+      sources: [
+        {
+          url: streamUrl,
+          quality: selection.item.quality || 'auto',
+          label: selection.item.quality || 'Auto',
+          delivery: strategy.mode,
+          originalExtension: ext || 'unknown',
+          available: Boolean(resolvedPath),
+          optimizedReady,
+        },
+      ],
+      subtitles: [],
+      preparePath: `/api/player/prepare/${encodeURIComponent(req.params.contentType)}/${encodeURIComponent(req.params.id)}?${new URLSearchParams({
+        season: String(req.query.season || 1),
+        episode: String(req.query.episode || 1),
+      }).toString()}`,
+      ...buildMetadata(selection),
+    });
   } catch (error) {
     next(error);
   }
@@ -846,20 +846,20 @@ router.get('/prepare/:contentType/:id', async (req, res, next) => {
       throw new AppError('Source file is not available on the server', 404, 'NOT_FOUND');
     }
 
-  const strategy = await determineStreamingStrategy(resolvedPath, ext);
+    const strategy = await determineStreamingStrategy(resolvedPath, ext);
 
-  if (strategy.mode === 'direct') {
-    return res.json({ ready: true, strategy: 'direct' });
-  }
+    if (strategy.mode === 'direct') {
+      return res.json({ ready: true, strategy: 'direct' });
+    }
 
-  const cachePath = buildCacheOutputPath(selection);
-  const cacheStat = fs.existsSync(cachePath) ? safeStat(cachePath) : null;
-  if (cacheStat?.size > 1024 * 1024) {
-    return res.json({ ready: true, strategy: strategy.mode, cachePath });
-  }
+    const cachePath = buildCacheOutputPath(selection);
+    const cacheStat = fs.existsSync(cachePath) ? safeStat(cachePath) : null;
+    if (cacheStat?.size > 1024 * 1024) {
+      return res.json({ ready: true, strategy: strategy.mode, cachePath });
+    }
 
     ensureOptimizedCache(selection, resolvedPath, strategy).catch((error) => {
-      console.error(error);
+      logger.error('Player error: ' + (error?.message || error));
     });
 
     res.json({ ready: false, strategy: strategy.mode });

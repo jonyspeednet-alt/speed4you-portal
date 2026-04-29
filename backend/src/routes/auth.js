@@ -8,7 +8,6 @@ const { getJwtSecret } = require('../config/auth');
 const { Joi, validateBody } = require('../middleware/validate');
 const { AppError } = require('../utils/error');
 
-const SECRET = getJwtSecret();
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -40,7 +39,7 @@ router.post('/login', loginLimiter, validateBody(loginSchema), async (req, res, 
 
     const token = jwt.sign(
       { id: admin.id, username: admin.username, role: admin.role },
-      SECRET,
+      getJwtSecret(),
       { expiresIn: '24h' }
     );
 
@@ -58,7 +57,7 @@ function verifyToken(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
     return res.json({ valid: true, user: decoded });
   } catch (err) {
     return next(new AppError('Invalid token', 401, 'UNAUTHORIZED'));
@@ -80,10 +79,11 @@ router.post('/refresh', (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, SECRET);
+    const secret = getJwtSecret();
+    const decoded = jwt.verify(token, secret);
     const refreshedToken = jwt.sign(
       { id: decoded.id, username: decoded.username, role: decoded.role },
-      SECRET,
+      secret,
       { expiresIn: '24h' }
     );
 

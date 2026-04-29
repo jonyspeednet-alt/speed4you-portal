@@ -168,7 +168,7 @@ async function fetchTvSeasons(tmdbId, seasonCount) {
 }
 
 async function fetchMetadataFromOmdb(imdbId) {
-  const url = new URL('http://www.omdbapi.com/');
+  const url = new URL('https://www.omdbapi.com/');
   url.searchParams.set('i', imdbId);
   url.searchParams.set('apikey', process.env.OMDB_API_KEY);
 

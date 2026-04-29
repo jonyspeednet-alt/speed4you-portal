@@ -75,13 +75,13 @@ router.get('/suggestions', async (req, res, next) => {
   }
 });
 
-router.get('/recent', async (req, res) => {
+router.get('/recent', async (req, res, next) => {
   try {
     const userId = resolveUserId(req);
     const items = await getRecentSearches(userId, 10);
     res.json({ items });
   } catch (error) {
-    res.status(500).json({ error: error.message || 'Unable to load recent searches' });
+    next(error);
   }
 });
 

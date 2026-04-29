@@ -12,7 +12,7 @@ const QUICK_GENRES = ['All', 'Action', 'Drama', 'Comedy', 'Horror', 'Romance', '
 const QUICK_LANGUAGES = ['All', 'English', 'Bengali', 'Hindi', 'Korean', 'Japanese'];
 const TRENDING_SEARCHES = ['Action', 'Bangla Dubbed', 'Korean', 'Thriller', '2025', 'Crime'];
 const PAGE_SIZE = 24;
-const posterFallback = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400';
+const posterFallback = '/portal/assets/poster-placeholder.svg';
 
 function normalizeItem(item) {
   return {
@@ -59,7 +59,7 @@ function BrowseCard({ item, index, isMobile, onQuickView }) {
             <span style={styles.typeBadge}>{isSeries ? 'Series' : 'Movie'}</span>
             {item.rating ? (
               <span style={styles.ratingBadge}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="var(--accent-tertiary)" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="var(--accent-tertiary)" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
                 {item.rating}
               </span>
             ) : null}
@@ -76,7 +76,7 @@ function BrowseCard({ item, index, isMobile, onQuickView }) {
           {!isMobile && hovered ? (
             <div style={styles.hoverOverlay}>
               <div style={styles.playCircle}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="#08111d" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="#08111d" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
               </div>
               <span style={styles.hoverLabel}>Quick View</span>
             </div>
@@ -242,7 +242,7 @@ function BrowsePage({ type }) {
 
           <div style={{ ...styles.actionsRow, ...(isMobile ? styles.actionsRowMobile : {}) }}>
             <button type="button" onClick={() => setFiltersOpen(true)} style={styles.filterTrigger}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z" /></svg>
               <span>Filters</span>
               {activeFilterCount > 0 && <span style={styles.filterCountBadge}>{activeFilterCount}</span>}
             </button>
@@ -261,7 +261,7 @@ function BrowsePage({ type }) {
           </div>
         </div>
       </section>
-      
+
       <FilterDrawer isOpen={filtersOpen} onClose={() => setFiltersOpen(false)}>
         <h2 style={styles.drawerTitle}>Filters</h2>
         <FilterField label="Genre" value={selectedGenre} onChange={setSelectedGenre} options={genreOptions} />
@@ -317,7 +317,7 @@ function BrowsePage({ type }) {
         <div style={styles.emptyState}>
           <h2 style={styles.emptyTitle}>No content matched this selection.</h2>
           <p style={styles.emptyText}>Try broader filters, another language, or a simpler search term.</p>
-          <button type="button" onClick={resetFilters} style={{...styles.resetButton, minWidth: 140}}>Clear filters</button>
+          <button type="button" onClick={resetFilters} style={{ ...styles.resetButton, minWidth: 140 }}>Clear filters</button>
         </div>
       ) : null}
 

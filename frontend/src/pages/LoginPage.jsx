@@ -22,7 +22,10 @@ function LoginPage() {
       const response = await authService.login(username, password);
       localStorage.setItem('token', response.token);
       localStorage.setItem('user', JSON.stringify(response.user));
-      navigate(searchParams.get('next') || '/admin');
+      // Only allow relative paths to prevent open redirect attacks
+      const next = searchParams.get('next') || '';
+      const safePath = next.startsWith('/') && !next.startsWith('//') ? next : '/admin';
+      navigate(safePath);
     } catch (loginError) {
       setError(loginError.message || 'Invalid credentials.');
     }

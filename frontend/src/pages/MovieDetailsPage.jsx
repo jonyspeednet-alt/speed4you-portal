@@ -7,7 +7,7 @@ import WatchlistButton from '../components/ui/WatchlistButton';
 import ShareButton from '../components/ui/ShareButton';
 import StarRating from '../components/ui/StarRating';
 
-const posterFallback = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400';
+const posterFallback = '/portal/assets/poster-placeholder.svg';
 const MOVIE_CACHE_PREFIX = 'portal-movie-details-v1:';
 
 function readMovieCache(slug) {
@@ -157,7 +157,7 @@ export default function MovieDetailsPage() {
             {/* Meta row */}
             <div style={s.metaRow}>
               <div style={s.ratingBox}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--accent-cyan)"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--accent-cyan)"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
                 <span style={s.ratingVal}>{movie.rating || 'N/A'}</span>
               </div>
               {movie.year && <span style={s.metaChip}>{movie.year}</span>}

@@ -105,7 +105,13 @@ function WatchlistPage() {
               <div key={item.id} style={styles.card}>
                 <Link to={detailsPath} style={styles.cardLink}>
                   <div style={styles.posterWrapper}>
-                    <img src={item.poster} alt={item.title} style={styles.poster} loading="lazy" />
+                    <img
+                      src={item.poster || '/portal/assets/poster-placeholder.svg'}
+                      alt={item.title}
+                      style={styles.poster}
+                      loading="lazy"
+                      onError={(e) => { e.currentTarget.src = '/portal/assets/poster-placeholder.svg'; }}
+                    />
                     <div style={styles.overlay} />
                     <span style={styles.rankBadge}>{String(index + 1).padStart(2, '0')}</span>
                     <span style={styles.typeBadge}>{item.type === 'series' ? 'Series' : 'Movie'}</span>

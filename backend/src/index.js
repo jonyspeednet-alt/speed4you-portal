@@ -144,23 +144,23 @@ app.get('/health/scanner', (req, res) => {
   res.json(getScannerHealth());
 });
 
-  // Group API routes to allow mounting at multiple points
-  const apiRouter = express.Router();
-  apiRouter.use('/auth', require('./routes/auth'));
-  apiRouter.use('/content', publicContentLimiter, require('./routes/content'));
-  apiRouter.use('/movies', publicContentLimiter, require('./routes/movies'));
-  apiRouter.use('/series', publicContentLimiter, require('./routes/series'));
-  apiRouter.use('/search', publicContentLimiter, require('./routes/search'));
-  apiRouter.use('/watchlist', require('./routes/watchlist'));
-  apiRouter.use('/progress', require('./routes/progress'));
-  apiRouter.use('/player', require('./routes/player'));
-  apiRouter.use('/tv', publicContentLimiter, require('./routes/tv'));
-  apiRouter.use('/admin', require('./routes/admin'));
+// Group API routes to allow mounting at multiple points
+const apiRouter = express.Router();
+apiRouter.use('/auth', require('./routes/auth'));
+apiRouter.use('/content', publicContentLimiter, require('./routes/content'));
+apiRouter.use('/movies', publicContentLimiter, require('./routes/movies'));
+apiRouter.use('/series', publicContentLimiter, require('./routes/series'));
+apiRouter.use('/search', publicContentLimiter, require('./routes/search'));
+apiRouter.use('/watchlist', require('./routes/watchlist'));
+apiRouter.use('/progress', require('./routes/progress'));
+apiRouter.use('/player', require('./routes/player'));
+apiRouter.use('/tv', publicContentLimiter, require('./routes/tv'));
+apiRouter.use('/admin', require('./routes/admin'));
 
-  // Mount at both /api (legacy/dev), / (proxied production), and /portal-api/api (Vite-configured prefix)
-  app.use('/api', apiRouter);
-  app.use('/portal-api/api', apiRouter);
-  app.use('/', apiRouter);
+// Mount at both /api (legacy/dev), / (proxied production), and /portal-api/api (Vite-configured prefix)
+app.use('/api', apiRouter);
+app.use('/portal-api/api', apiRouter);
+app.use('/', apiRouter);
 
 if (fs.existsSync(frontendDistPath)) {
   // Serve static assets from the frontend build
@@ -176,10 +176,10 @@ if (fs.existsSync(frontendDistPath)) {
 
   // Handle SPA routing: serve index.html for all non-API routes
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/')) {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/portal-api/')) {
       return next();
     }
-    
+
     // Explicitly handle /health to avoid sending index.html
     if (req.path === '/health' || req.path === '/health/scanner') {
       return next();
@@ -253,7 +253,7 @@ async function startServer() {
 
   const shutdown = async (signal) => {
     logger.info(`Received ${signal}. Starting graceful shutdown...`);
-    
+
     server.close(async () => {
       logger.info('HTTP server closed.');
       try {

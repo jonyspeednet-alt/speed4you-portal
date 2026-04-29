@@ -220,6 +220,7 @@ function ContentLibraryPage() {
     total: 0,
   });
   const [pageInput, setPageInput] = useState('1');
+  const [activeTab, setActiveTab] = useState('content');
 
   useEffect(() => {
     setFilters((current) => ({
@@ -730,7 +731,7 @@ function ContentLibraryPage() {
     }
   };
 
-  
+
   const handleVacuumDatabase = async () => {
     try {
       setVacuumLoading(true);
@@ -950,70 +951,30 @@ function ContentLibraryPage() {
 
   return (
     <div style={styles.page}>
-      <section style={{ ...styles.hero, ...(isMobile ? styles.heroMobile : isTablet ? styles.heroTablet : {}) }}>
-        <div style={styles.heroCopy}>
-          <span style={styles.eyebrow}>Scanner CMS</span>
-          <h2 style={styles.title}>{pageTitle}</h2>
-          <p style={styles.subtitle}>{pageSubtitle}</p>
-          <div style={styles.heroBadgeRow}>
-            <span style={styles.heroBadge}>Roots: {selectedRootIds.length || roots.length}</span>
-            <span style={styles.heroBadge}>Visible: {contentMetrics.visible}</span>
-            <span style={styles.heroBadge}>Drafts: {contentMetrics.drafts}</span>
-            <span style={styles.heroBadge}>Duplicates: {contentMetrics.duplicateRisk}</span>
+      {/* ── Page header ── */}
+      <div style={styles.pageHeader}>
+        <div>
+          <h2 style={styles.pageTitle2}>{pageTitle}</h2>
+          <div style={styles.pageHeaderMeta}>
+            <span>{pagination.total} total</span>
+            <span style={styles.metaDot}>·</span>
+            <span>{contentMetrics.published} published</span>
+            <span style={styles.metaDot}>·</span>
+            <span>{contentMetrics.drafts} drafts</span>
+            {contentMetrics.duplicateRisk > 0 && (
+              <><span style={styles.metaDot}>·</span><span style={styles.warnText}>{contentMetrics.duplicateRisk} duplicates</span></>
+            )}
+            {currentJob?.status === 'running' && (
+              <><span style={styles.metaDot}>·</span><span style={styles.scanningLabel}>● Scanning...</span></>
+            )}
           </div>
         </div>
-
-        <div style={styles.heroPanel}>
-          <div style={styles.liveBadge}>
-            <span style={styles.liveDot} />
-            <span>{currentJob?.status === 'running' ? 'Scanner Running' : 'Scanner Idle'}</span>
-          </div>
-          <div style={styles.heroActionStack}>
-            <button onClick={handleRunScanner} disabled={scanLoading || loading} style={styles.primaryBtn}>
-              {scanLoading ? 'Scanning...' : `Run Scanner (${selectedRootIds.length || roots.length})`}
-            </button>
-            <button
-              onClick={handleStopScanner}
-              disabled={scanLoading || currentJob?.status !== 'running'}
-              style={styles.secondaryBtn}
-            >
-              Stop Scanner
-            </button>
-            <button
-              onClick={handleDuplicateCleanup}
-              disabled={duplicateCleanupLoading || loading}
-              style={styles.secondaryBtn}
-            >
-              {duplicateCleanupLoading ? 'Cleaning...' : 'Cleanup Duplicates'}
-            </button>
-            <button
-              onClick={handlePruneCatalog}
-              disabled={pruneLoading || loading}
-              style={styles.secondaryBtn}
-              title="Remove junk files and missing items from catalog"
-            >
-              {pruneLoading ? 'Pruning...' : 'Prune Catalog'}
-            </button>
-            <button
-              onClick={handleVacuumDatabase}
-              disabled={vacuumLoading || loading}
-              style={styles.secondaryBtn}
-              title="Run Postgres VACUUM ANALYZE to optimize queries"
-            >
-              {vacuumLoading ? 'Optimizing...' : 'Optimize DB'}
-            </button>
-            <Link to="/admin/content/new" style={styles.ghostBtn}>Add Manual Content</Link>
-          </div>
-          <div style={styles.heroMeta}>
-            <span>Healthy roots: {healthSummary.healthyRoots}</span>
-            <span>Broken roots: {healthSummary.brokenRoots}</span>
-            <span>Remote roots: {healthSummary.remoteRoots}</span>
-            <span>Review queue: {duplicateStats.pendingReview}</span>
-            <span>Last activity: {formatWhen(currentJob?.updatedAt || currentJob?.startedAt)}</span>
-          </div>
+        <div style={styles.pageHeaderActions}>
+          <Link to="/admin/content/new" style={styles.addBtn2}>+ Add Content</Link>
         </div>
-      </section>
+      </div>
 
+      {/* ── Notifications ── */}
       {error ? <div style={styles.errorBox}>{error}</div> : null}
       {scanStateLabel ? <div style={styles.infoBox}>{scanStateLabel}</div> : null}
       {pendingDelete ? (
@@ -1023,734 +984,783 @@ function ContentLibraryPage() {
         </div>
       ) : null}
 
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <span style={styles.sectionEyebrow}>Live Scan</span>
-            <h3 style={styles.sectionTitle}>Scanner Progress</h3>
-          </div>
-          <div style={styles.catalogTools}>
-            <span style={styles.summaryPill}>{currentJob?.status || 'idle'}</span>
-            <span style={styles.summaryPill}>Roots {scannerProgress.rootsScanned}/{scannerProgress.rootsRequested}</span>
-            <span style={styles.summaryPill}>Added {scannerProgress.created}</span>
-          </div>
-        </div>
+      {/* ── Tab bar ── */}
+      <div style={styles.tabBar}>
+        <button type="button" onClick={() => setActiveTab('content')} style={{ ...styles.tabBtn, ...(activeTab === 'content' ? styles.tabBtnActive : {}) }}>
+          Content
+          <span style={{ ...styles.tabCount, ...(activeTab === 'content' ? styles.tabCountActive : {}) }}>{pagination.total}</span>
+        </button>
+        <button type="button" onClick={() => setActiveTab('scanner')} style={{ ...styles.tabBtn, ...(activeTab === 'scanner' ? styles.tabBtnActive : {}) }}>
+          Scanner
+          {drafts.length > 0 && <span style={{ ...styles.tabCount, ...(activeTab === 'scanner' ? styles.tabCountActive : {}) }}>{drafts.length}</span>}
+        </button>
+        <button type="button" onClick={() => setActiveTab('tools')} style={{ ...styles.tabBtn, ...(activeTab === 'tools' ? styles.tabBtnActive : {}) }}>
+          Tools
+        </button>
+      </div>
 
-        {currentJob?.status ? (
-          <div style={{ ...styles.liveScanLayout, ...(isMobile || isTablet ? styles.topologyGridMobile : {}) }}>
-            <div style={styles.liveScanCard}>
-              <div style={styles.healthRow}>
-                <strong style={styles.rootName}>
-                  {currentJob?.status === 'running' ? 'Scan in progress' : `Scan ${currentJob?.status}`}
-                </strong>
-                <span style={styles.metaInline}>{Math.round(scannerProgress.percent)}%</span>
+      {/* ══ SCANNER TAB ══════════════════════════════════════════════════════ */}
+      {activeTab === 'scanner' && (
+        <>
+          <section style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <div>
+                <span style={styles.sectionEyebrow}>Live Scan</span>
+                <h3 style={styles.sectionTitle}>Scanner Progress</h3>
               </div>
-              <ProgressBar value={scannerProgress.percent} max={100} size="large" color="#38bdf8" />
-              <div style={styles.liveStatsGrid}>
-                <div style={styles.liveStatBox}>
-                  <span style={styles.metricLabel}>Checked</span>
-                  <strong style={styles.metricValue}>{scannerProgress.processed}/{scannerProgress.totalCandidates || '-'}</strong>
-                </div>
-                <div style={styles.liveStatBox}>
-                  <span style={styles.metricLabel}>Added</span>
-                  <strong style={styles.metricValue}>{scannerProgress.created}</strong>
-                </div>
-                <div style={styles.liveStatBox}>
-                  <span style={styles.metricLabel}>Updated</span>
-                  <strong style={styles.metricValue}>{scannerProgress.updated}</strong>
-                </div>
-                <div style={styles.liveStatBox}>
-                  <span style={styles.metricLabel}>Unchanged</span>
-                  <strong style={styles.metricValue}>{scannerProgress.unchanged}</strong>
-                </div>
-                <div style={styles.liveStatBox}>
-                  <span style={styles.metricLabel}>Deleted</span>
-                  <strong style={styles.metricValue}>{scannerProgress.deleted}</strong>
-                </div>
-                <div style={styles.liveStatBox}>
-                  <span style={styles.metricLabel}>Duplicates</span>
-                  <strong style={styles.metricValue}>{scannerProgress.duplicateDrafts}</strong>
-                </div>
-              </div>
-              <div style={styles.heroMeta}>
-                <span>Active root: {scannerProgress.activeRoot?.label || 'Waiting for next root'}</span>
-                <span>
-                  Wait guidance: {currentJob?.status === 'running'
-                    ? (scannerProgress.etaMs
-                      ? `around ${formatDuration(scannerProgress.etaMs)} left`
-                      : 'still estimating, wait 1-2 more minutes for a stable ETA')
-                    : 'scanner is not running'}
-                </span>
-                <span>
-                  Elapsed: {formatDuration(scannerProgress.elapsedMs)} | Last activity: {formatWhen(currentJob?.updatedAt || currentJob?.startedAt)}
-                </span>
+              <div style={styles.catalogTools}>
+                <span style={styles.summaryPill}>{currentJob?.status || 'idle'}</span>
+                <span style={styles.summaryPill}>Roots {scannerProgress.rootsScanned}/{scannerProgress.rootsRequested}</span>
+                <span style={styles.summaryPill}>Added {scannerProgress.created}</span>
               </div>
             </div>
 
-            <div style={styles.liveRootList}>
-              {scannerProgress.rootResults.map((root) => {
-                const rootPercent = Number(root.totalCandidates || 0) > 0
-                  ? Math.min(100, Math.max(0, (Number(root.processed || 0) / Number(root.totalCandidates || 1)) * 100))
-                  : (root.status === 'completed' ? 100 : 0);
-
-                return (
-                  <div key={root.id} style={styles.liveRootCard}>
-                    <div style={styles.healthRow}>
-                      <strong style={styles.rootName}>{root.label || root.id}</strong>
-                      <span style={styles.metaInline}>{root.status || 'pending'}</span>
-                    </div>
-                    <ProgressBar value={rootPercent} max={100} size="small" color="#22c55e" />
-                    <span style={styles.metaLine}>
-                      {root.processed || 0}/{root.totalCandidates || 0} folders | +{root.created || 0} added | {root.updated || 0} updated
-                    </span>
-                    <span style={styles.metaLine}>
-                      {root.unchanged || 0} unchanged | {root.deleted || 0} deleted | {root.duplicateDrafts || 0} dup draft
-                    </span>
-                    {Array.isArray(root.errors) && root.errors.length ? (
-                      <span style={styles.warnText}>{root.errors[0]}</span>
-                    ) : null}
+            {currentJob?.status ? (
+              <div style={{ ...styles.liveScanLayout, ...(isMobile || isTablet ? styles.topologyGridMobile : {}) }}>
+                <div style={styles.liveScanCard}>
+                  <div style={styles.healthRow}>
+                    <strong style={styles.rootName}>
+                      {currentJob?.status === 'running' ? 'Scan in progress' : `Scan ${currentJob?.status}`}
+                    </strong>
+                    <span style={styles.metaInline}>{Math.round(scannerProgress.percent)}%</span>
                   </div>
+                  <ProgressBar value={scannerProgress.percent} max={100} size="large" color="#38bdf8" />
+                  <div style={styles.liveStatsGrid}>
+                    <div style={styles.liveStatBox}>
+                      <span style={styles.metricLabel}>Checked</span>
+                      <strong style={styles.metricValue}>{scannerProgress.processed}/{scannerProgress.totalCandidates || '-'}</strong>
+                    </div>
+                    <div style={styles.liveStatBox}>
+                      <span style={styles.metricLabel}>Added</span>
+                      <strong style={styles.metricValue}>{scannerProgress.created}</strong>
+                    </div>
+                    <div style={styles.liveStatBox}>
+                      <span style={styles.metricLabel}>Updated</span>
+                      <strong style={styles.metricValue}>{scannerProgress.updated}</strong>
+                    </div>
+                    <div style={styles.liveStatBox}>
+                      <span style={styles.metricLabel}>Unchanged</span>
+                      <strong style={styles.metricValue}>{scannerProgress.unchanged}</strong>
+                    </div>
+                    <div style={styles.liveStatBox}>
+                      <span style={styles.metricLabel}>Deleted</span>
+                      <strong style={styles.metricValue}>{scannerProgress.deleted}</strong>
+                    </div>
+                    <div style={styles.liveStatBox}>
+                      <span style={styles.metricLabel}>Duplicates</span>
+                      <strong style={styles.metricValue}>{scannerProgress.duplicateDrafts}</strong>
+                    </div>
+                  </div>
+                  <div style={styles.heroMeta}>
+                    <span>Active root: {scannerProgress.activeRoot?.label || 'Waiting for next root'}</span>
+                    <span>
+                      Wait guidance: {currentJob?.status === 'running'
+                        ? (scannerProgress.etaMs
+                          ? `around ${formatDuration(scannerProgress.etaMs)} left`
+                          : 'still estimating, wait 1-2 more minutes for a stable ETA')
+                        : 'scanner is not running'}
+                    </span>
+                    <span>
+                      Elapsed: {formatDuration(scannerProgress.elapsedMs)} | Last activity: {formatWhen(currentJob?.updatedAt || currentJob?.startedAt)}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={styles.liveRootList}>
+                  {scannerProgress.rootResults.map((root) => {
+                    const rootPercent = Number(root.totalCandidates || 0) > 0
+                      ? Math.min(100, Math.max(0, (Number(root.processed || 0) / Number(root.totalCandidates || 1)) * 100))
+                      : (root.status === 'completed' ? 100 : 0);
+
+                    return (
+                      <div key={root.id} style={styles.liveRootCard}>
+                        <div style={styles.healthRow}>
+                          <strong style={styles.rootName}>{root.label || root.id}</strong>
+                          <span style={styles.metaInline}>{root.status || 'pending'}</span>
+                        </div>
+                        <ProgressBar value={rootPercent} max={100} size="small" color="#22c55e" />
+                        <span style={styles.metaLine}>
+                          {root.processed || 0}/{root.totalCandidates || 0} folders | +{root.created || 0} added | {root.updated || 0} updated
+                        </span>
+                        <span style={styles.metaLine}>
+                          {root.unchanged || 0} unchanged | {root.deleted || 0} deleted | {root.duplicateDrafts || 0} dup draft
+                        </span>
+                        {Array.isArray(root.errors) && root.errors.length ? (
+                          <span style={styles.warnText}>{root.errors[0]}</span>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div style={styles.empty}>
+                No active scanner job. Start a scan to see live progress, added items, and remaining work.
+              </div>
+            )}
+          </section>
+
+          <section style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <div>
+                <span style={styles.sectionEyebrow}>Scanner</span>
+                <h3 style={styles.sectionTitle}>Source Roots</h3>
+              </div>
+              <div style={styles.catalogTools}>
+                <span style={styles.summaryPill}>Select folders before scanning</span>
+                <button type="button" onClick={selectAllRoots} style={styles.secondaryMiniBtn}>Select All</button>
+                <button type="button" onClick={clearRootSelection} style={styles.secondaryMiniBtn}>Clear</button>
+              </div>
+            </div>
+            <div style={styles.rootGrid}>
+              {auxLoading && !roots.length ? (
+                <div style={styles.empty}>Loading scanner roots...</div>
+              ) : null}
+              {roots.map((root) => {
+                const active = selectedRootIds.includes(root.id);
+                return (
+                  <button
+                    key={root.id}
+                    type="button"
+                    onClick={() => toggleRoot(root.id)}
+                    style={{
+                      ...styles.rootCard,
+                      ...(active ? styles.rootCardActive : {}),
+                      ...((root.checkable !== false && !root.exists) ? styles.rootCardBroken : {}),
+                    }}
+                  >
+                    <div style={styles.rootHeader}>
+                      <strong style={styles.rootName}>{root.label || root.id}</strong>
+                      <span style={{ ...styles.statusDot, ...(active ? styles.statusDotActive : {}) }} />
+                    </div>
+                    <span style={styles.pathCell}>{root.scanPath || root.path}</span>
+                    <span style={styles.metaLine}>
+                      {root.type || 'media'} | {root.language || 'Unknown'} | {root.category || 'Uncategorized'}
+                    </span>
+                    <span style={styles.metaLine}>
+                      Depth {root.maxDepth ?? '-'} | Batch {root.batchSize ?? '-'} | Candidates {root.estimatedCandidates ?? '-'}
+                    </span>
+                    <div style={styles.rootFooter}>
+                      <span style={(root.checkable === false || root.exists) ? styles.okText : styles.warnText}>
+                        {root.pathStatusLabel || (root.exists ? 'Available' : 'Missing')}
+                      </span>
+                      <span style={styles.rootToggle}>{active ? 'Selected' : 'Click to select'}</span>
+                    </div>
+                  </button>
                 );
               })}
             </div>
-          </div>
-        ) : (
-          <div style={styles.empty}>
-            No active scanner job. Start a scan to see live progress, added items, and remaining work.
-          </div>
-        )}
-      </section>
+          </section>
 
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <span style={styles.sectionEyebrow}>Overview</span>
-            <h3 style={styles.sectionTitle}>Library Snapshot</h3>
-          </div>
-        </div>
-        <div style={styles.metricsGrid}>
-          <StatCard label="Total Catalog" value={contentMetrics.total} hint="All matching records on the server" accent />
-          <StatCard label="Published" value={contentMetrics.published} hint="Currently visible on the portal" />
-          <StatCard label="Drafts" value={contentMetrics.drafts} hint="Waiting for review or publish" />
-          <StatCard label="Needs Review" value={contentMetrics.needsReview} hint="Metadata confidence needs attention" />
-          <StatCard label="Scanner Imports" value={contentMetrics.scanner} hint="Imported from media scan" />
-          <StatCard label="Manual Entries" value={contentMetrics.manual} hint="Created by editors manually" />
-        </div>
-      </section>
-
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <span style={styles.sectionEyebrow}>Organization</span>
-            <h3 style={styles.sectionTitle}>Collections And Tags</h3>
-          </div>
-          <div style={styles.catalogTools}>
-            <span style={styles.summaryPill}>{organization?.totals?.collections || 0} collections</span>
-            <span style={styles.summaryPill}>{organization?.totals?.tags || 0} tags</span>
-          </div>
-        </div>
-        <div style={styles.metricsGrid}>
-          {auxLoading && !(organization?.collections?.length || organization?.tags?.length) ? (
-            <div style={styles.empty}>Loading organization summary...</div>
-          ) : null}
-          {(organization?.collections || []).slice(0, 3).map((entry) => (
-            <StatCard key={`collection-${entry.label}`} label={entry.label} value={entry.count} hint="items in collection" />
-          ))}
-          {(organization?.tags || []).slice(0, 3).map((entry) => (
-            <StatCard key={`tag-${entry.label}`} label={`#${entry.label}`} value={entry.count} hint="tagged titles" />
-          ))}
-        </div>
-      </section>
-
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <span style={styles.sectionEyebrow}>Scanner</span>
-            <h3 style={styles.sectionTitle}>Source Roots</h3>
-          </div>
-          <div style={styles.catalogTools}>
-            <span style={styles.summaryPill}>Select folders before scanning</span>
-            <button type="button" onClick={selectAllRoots} style={styles.secondaryMiniBtn}>Select All</button>
-            <button type="button" onClick={clearRootSelection} style={styles.secondaryMiniBtn}>Clear</button>
-          </div>
-        </div>
-        <div style={styles.rootGrid}>
-          {auxLoading && !roots.length ? (
-            <div style={styles.empty}>Loading scanner roots...</div>
-          ) : null}
-          {roots.map((root) => {
-            const active = selectedRootIds.includes(root.id);
-            return (
-              <button
-                key={root.id}
-                type="button"
-                onClick={() => toggleRoot(root.id)}
-                style={{
-                  ...styles.rootCard,
-                  ...(active ? styles.rootCardActive : {}),
-                  ...((root.checkable !== false && !root.exists) ? styles.rootCardBroken : {}),
-                }}
-              >
-                <div style={styles.rootHeader}>
-                  <strong style={styles.rootName}>{root.label || root.id}</strong>
-                  <span style={{ ...styles.statusDot, ...(active ? styles.statusDotActive : {}) }} />
+          <div style={{ ...styles.topologyGrid, ...(isMobile || isTablet ? styles.topologyGridMobile : {}) }}>
+            <section style={styles.section}>
+              <div style={styles.sectionHeader}>
+                <div>
+                  <span style={styles.sectionEyebrow}>Review Queue</span>
+                  <h3 style={styles.sectionTitle}>Scanner Drafts</h3>
                 </div>
-                <span style={styles.pathCell}>{root.scanPath || root.path}</span>
-                <span style={styles.metaLine}>
-                  {root.type || 'media'} | {root.language || 'Unknown'} | {root.category || 'Uncategorized'}
-                </span>
-                <span style={styles.metaLine}>
-                  Depth {root.maxDepth ?? '-'} | Batch {root.batchSize ?? '-'} | Candidates {root.estimatedCandidates ?? '-'}
-                </span>
-                <div style={styles.rootFooter}>
-                  <span style={(root.checkable === false || root.exists) ? styles.okText : styles.warnText}>
-                    {root.pathStatusLabel || (root.exists ? 'Available' : 'Missing')}
-                  </span>
-                  <span style={styles.rootToggle}>{active ? 'Selected' : 'Click to select'}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <div style={{ ...styles.topologyGrid, ...(isMobile || isTablet ? styles.topologyGridMobile : {}) }}>
-        <section style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div>
-              <span style={styles.sectionEyebrow}>Review Queue</span>
-              <h3 style={styles.sectionTitle}>Scanner Drafts</h3>
-            </div>
-            <span style={styles.summaryPill}>{drafts.length} draft items</span>
-          </div>
-        <div style={styles.draftGrid}>
-          {auxLoading && !drafts.length ? (
-            <div style={styles.empty}>Loading scanner drafts...</div>
-          ) : null}
-          {spotlightDrafts.length ? spotlightDrafts.map((item) => (
-              <article key={item.id} style={{ ...styles.draftCard, ...(isMobile ? styles.draftCardMobile : {}) }}>
-                <div style={styles.draftVisual}>
-                  <ContentPoster
-                    src={resolvePosterSource(item)}
-                    alt={item.title}
-                    style={styles.posterPreview}
-                    variant="preview"
-                    fallbackText="No Poster"
-                  />
-                </div>
-                <div style={styles.draftBody}>
-                  <div style={styles.draftTop}>
-                    <strong style={styles.itemTitle}>{item.title}</strong>
-                    {Number(item.duplicateCount || 0) > 0 ? (
-                      <span style={styles.duplicateBadge}>{item.duplicateCount} dup</span>
-                    ) : null}
-                  </div>
-                  <span style={styles.metaLine}>{item.type} | {item.category || '-'} | {item.year || 'N/A'}</span>
-                  <span style={styles.metaLine}>{item.language || 'Unknown'} | {item.sourceType}</span>
-                  <span style={styles.metaLine}>Metadata: {item.metadataStatus || 'pending'} ({item.metadataConfidence || 0}%)</span>
-                  <div style={styles.actionRow}>
-                    <Link to={`/admin/content/${item.id}/edit`} style={styles.secondaryMiniBtn}>Review</Link>
-                    <button type="button" onClick={() => handlePublish(item.id)} style={styles.publishBtn}>Publish</button>
-                    <Link to={`/watch/${item.id}`} style={styles.secondaryMiniBtn}>Play</Link>
-                  </div>
-                </div>
-              </article>
-            )) : (
-              <div style={styles.empty}>No draft content is waiting right now.</div>
-            )}
-          </div>
-        </section>
-
-        <section style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div>
-              <span style={styles.sectionEyebrow}>Quality Control</span>
-              <h3 style={styles.sectionTitle}>Health And Duplicates</h3>
-            </div>
-          </div>
-          <div style={styles.healthList}>
-            <div style={styles.healthCard}>
-              <div style={styles.healthRow}>
-                <strong>Scanner Health</strong>
-                <span style={styles.metaInline}>
-                  {healthSummary.healthyRoots} healthy / {healthSummary.brokenRoots} broken / {healthSummary.remoteRoots} remote
-                </span>
+                <span style={styles.summaryPill}>{drafts.length} draft items</span>
               </div>
-              <span style={styles.metaLine}>Current job: {currentJob?.status || 'idle'}</span>
-            </div>
-            <div style={styles.healthCard}>
-              <div style={styles.healthRow}>
-                <strong>Database Health</strong>
-                <span style={styles.metaInline}>{dbHealth?.databaseSize || '...'}</span>
-              </div>
-              <span style={styles.metaLine}>
-                Pool: total {dbHealth?.pool?.total ?? '-'} | idle {dbHealth?.pool?.idle ?? '-'} | waiting {dbHealth?.pool?.waiting ?? '-'}
-              </span>
-            </div>
-            <div style={styles.healthCard}>
-              <div style={styles.healthRow}>
-                <strong>Duplicate Review</strong>
-                <span style={styles.metaInline}>{duplicateStats.totalItems} items</span>
-              </div>
-              <span style={styles.metaLine}>
-                Exact: {duplicateStats.exactDuplicates} | Pending review: {duplicateStats.pendingReview}
-              </span>
-            </div>
-          </div>
-
-          <div style={styles.duplicateShelf}>
-            {auxLoading && !duplicateHighlights.length ? (
-              <div style={styles.empty}>Loading duplicate review...</div>
-            ) : null}
-            {duplicateHighlights.length ? duplicateHighlights.map((entry, index) => (
-              <div key={entry.id || entry.titleKey || index} style={styles.duplicateShelfCard}>
-                <strong>{entry.title || entry.titleKey || `Duplicate Group ${index + 1}`}</strong>
-                <span style={styles.metaLine}>
-                  {(entry.items || entry.matches || []).length || entry.count || 0} possible matches
-                </span>
-                <span style={styles.metaLine}>
-                  {(entry.items || entry.matches || []).slice(0, 3).map((item) => item.title || item.originalTitle).filter(Boolean).join(', ') || 'Review in content table'}
-                </span>
-              </div>
-            )) : (
-              <div style={styles.empty}>No duplicate groups reported.</div>
-            )}
-          </div>
-
-          <div style={styles.logList}>
-            {auxLoading && !logs.length ? (
-              <div style={styles.empty}>Loading recent scanner logs...</div>
-            ) : null}
-            {logs.map((log, index) => (
-              <div key={`${index}-${log.startedAt || log.endedAt || log.status}`} style={styles.logCard}>
-                <strong>{log.status || 'completed'}</strong>
-                <span style={styles.metaLine}>
-                  {formatWhen(log.startedAt || log.endedAt)} | Added {log.createdCount || 0} | Updated {log.updatedCount || 0}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <div>
-            <span style={styles.sectionEyebrow}>Filter And Manage</span>
-            <h3 style={styles.sectionTitle}>Content Library</h3>
-          </div>
-          <div style={styles.catalogTools}>
-            <span style={styles.summaryPill}>{pagination.total} total</span>
-            <span style={styles.summaryPill}>{selectedContentIds.length} selected</span>
-            <span style={styles.summaryPill}>{allContent.length} visible</span>
-            {contentRefreshing && !loading ? <span style={styles.summaryPill}>Refreshing...</span> : null}
-            <button type="button" onClick={exportVisibleContentCsv} style={styles.secondaryMiniBtn}>Export CSV</button>
-          </div>
-        </div>
-
-        <div style={styles.filterGrid}>
-          <div style={styles.field}>
-            <label style={styles.searchLabel}>Search</label>
-            <input
-              type="text"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search title, genre, language, category..."
-              style={styles.input}
-            />
-          </div>
-          <div style={styles.field}>
-            <label style={styles.searchLabel}>Status</label>
-            <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)} style={styles.select}>
-              <option value="">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="published">Published</option>
-            </select>
-          </div>
-          <div style={styles.field}>
-            <label style={styles.searchLabel}>Source</label>
-            <select value={filters.source} onChange={(event) => updateFilter('source', event.target.value)} style={styles.select}>
-              <option value="">All Sources</option>
-              <option value="scanner">Scanner</option>
-              <option value="manual">Manual</option>
-            </select>
-          </div>
-          <div style={styles.field}>
-            <label style={styles.searchLabel}>Language</label>
-            <select value={filters.language} onChange={(event) => updateFilter('language', event.target.value)} style={styles.select}>
-              <option value="">All Languages</option>
-              {filterOptions.languages.map((language) => (
-                <option key={language} value={language}>{language}</option>
-              ))}
-            </select>
-          </div>
-          <div style={styles.field}>
-            <label style={styles.searchLabel}>Category</label>
-            <select value={filters.category} onChange={(event) => updateFilter('category', event.target.value)} style={styles.select}>
-              <option value="">All Categories</option>
-              {filterOptions.categories.map((category) => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-          </div>
-          <div style={styles.field}>
-            <label style={styles.searchLabel}>Collection</label>
-            <select value={filters.collection} onChange={(event) => updateFilter('collection', event.target.value)} style={styles.select}>
-              <option value="">All Collections</option>
-              {filterOptions.collections.map((collection) => (
-                <option key={collection} value={collection}>{collection}</option>
-              ))}
-            </select>
-          </div>
-          <div style={styles.field}>
-            <label style={styles.searchLabel}>Tag</label>
-            <select value={filters.tag} onChange={(event) => updateFilter('tag', event.target.value)} style={styles.select}>
-              <option value="">All Tags</option>
-              {filterOptions.tags.map((tag) => (
-                <option key={tag} value={tag}>{tag}</option>
-              ))}
-            </select>
-          </div>
-          <div style={styles.field}>
-            <label style={styles.searchLabel}>Root</label>
-            <select value={filters.sourceRootId} onChange={(event) => updateFilter('sourceRootId', event.target.value)} style={styles.select}>
-              <option value="">All Roots</option>
-              {roots.map((root) => (
-                <option key={root.id} value={root.id}>{root.label || root.id}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div style={styles.quickFilterBar}>
-          <button type="button" onClick={() => updateFilter('duplicatesOnly', !filters.duplicatesOnly)} style={{ ...styles.quickChip, ...(filters.duplicatesOnly ? styles.quickChipActive : {}) }}>
-            Duplicates Only
-          </button>
-          <button type="button" onClick={() => updateFilter('status', filters.status === 'draft' ? '' : 'draft')} style={{ ...styles.quickChip, ...(filters.status === 'draft' ? styles.quickChipActive : {}) }}>
-            Drafts
-          </button>
-          <button type="button" onClick={() => updateFilter('status', filters.status === 'published' ? '' : 'published')} style={{ ...styles.quickChip, ...(filters.status === 'published' ? styles.quickChipActive : {}) }}>
-            Published
-          </button>
-          <button type="button" onClick={() => updateFilter('source', filters.source === 'scanner' ? '' : 'scanner')} style={{ ...styles.quickChip, ...(filters.source === 'scanner' ? styles.quickChipActive : {}) }}>
-            Scanner
-          </button>
-          <button type="button" onClick={() => updateFilter('source', filters.source === 'manual' ? '' : 'manual')} style={{ ...styles.quickChip, ...(filters.source === 'manual' ? styles.quickChipActive : {}) }}>
-            Manual
-          </button>
-          <button type="button" onClick={() => updateFilter('collection', filters.collection === (organization?.collections?.[0]?.label || '') ? '' : (organization?.collections?.[0]?.label || ''))} style={{ ...styles.quickChip, ...(filters.collection && filters.collection === organization?.collections?.[0]?.label ? styles.quickChipActive : {}) }}>
-            Top Collection
-          </button>
-          <button
-            type="button"
-            onClick={resetFilters}
-            style={styles.quickChipClear}
-          >
-            Clear Filters
-          </button>
-        </div>
-
-        <div style={styles.bulkBar}>
-          <span style={styles.metaInline}>Saved Presets</span>
-          <div style={styles.actionRow}>
-            <input
-              type="text"
-              value={presetName}
-              onChange={(event) => setPresetName(event.target.value)}
-              placeholder="Preset name"
-              style={styles.bulkInput}
-            />
-            <button type="button" onClick={saveCurrentPreset} style={styles.secondaryMiniBtn}>Save Preset</button>
-            {savedPresets.slice(0, 5).map((preset) => (
-              <div key={preset.id} style={styles.presetChipWrap}>
-                <button type="button" onClick={() => applyPreset(preset)} style={styles.quickChip}>{preset.name}</button>
-                <button type="button" onClick={() => removePreset(preset.id)} style={styles.presetDelete}>x</button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={styles.bulkBar}>
-          <span style={styles.metaInline}>Visible Columns</span>
-          <div style={styles.actionRow}>
-            <button type="button" onClick={() => toggleColumn('status')} style={{ ...styles.quickChip, ...(visibleColumns.status ? styles.quickChipActive : {}) }}>Status</button>
-            <button type="button" onClick={() => toggleColumn('metadata')} style={{ ...styles.quickChip, ...(visibleColumns.metadata ? styles.quickChipActive : {}) }}>Metadata</button>
-            <button type="button" onClick={() => toggleColumn('source')} style={{ ...styles.quickChip, ...(visibleColumns.source ? styles.quickChipActive : {}) }}>Source</button>
-            <button type="button" onClick={() => toggleColumn('actions')} style={{ ...styles.quickChip, ...(visibleColumns.actions ? styles.quickChipActive : {}) }}>Actions</button>
-          </div>
-        </div>
-
-        <div style={styles.bulkBar}>
-          <span style={styles.metaInline}>
-            Page size
-          </span>
-          <div style={styles.actionRow}>
-            {[25, 50, 100].map((size) => (
-              <button
-                key={size}
-                type="button"
-                onClick={() => startTransition(() => setPagination((current) => ({ ...current, page: 1, limit: size })))}
-                style={{
-                  ...styles.quickChip,
-                  ...(pagination.limit === size ? styles.quickChipActive : {}),
-                }}
-              >
-                {size}
-              </button>
-            ))}
-            <button type="button" onClick={resetFilters} style={styles.secondaryMiniBtn}>Reset View</button>
-          </div>
-        </div>
-
-        {selectedContentIds.length ? (
-          <div style={styles.bulkBar}>
-            <span style={styles.metaInline}>{selectedContentIds.length} items selected</span>
-            <div style={styles.actionRow}>
-              <input
-                type="text"
-                value={bulkEditor.collection}
-                onChange={(event) => setBulkEditor((current) => ({ ...current, collection: event.target.value }))}
-                placeholder="Collection"
-                style={styles.bulkInput}
-              />
-              <input
-                type="text"
-                value={bulkEditor.tags}
-                onChange={(event) => setBulkEditor((current) => ({ ...current, tags: event.target.value }))}
-                placeholder="tags, comma separated"
-                style={styles.bulkInput}
-              />
-              <input
-                type="number"
-                value={bulkEditor.featuredOrder}
-                onChange={(event) => setBulkEditor((current) => ({ ...current, featuredOrder: event.target.value }))}
-                placeholder="Feature"
-                style={{ ...styles.bulkInput, width: '100px' }}
-              />
-              <button
-                type="button"
-                onClick={handleBulkOrganize}
-                disabled={bulkUpdateLoading || bulkStatusLoading}
-                style={styles.publishBtn}
-              >
-                {bulkUpdateLoading ? 'Organizing...' : 'Bulk Organize'}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBulkStatusUpdate('published')}
-                disabled={bulkStatusLoading || bulkUpdateLoading}
-                style={styles.publishBtn}
-              >
-                {bulkStatusLoading ? 'Updating...' : 'Publish Selected'}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBulkStatusUpdate('draft')}
-                disabled={bulkStatusLoading || bulkUpdateLoading}
-                style={styles.secondaryMiniBtn}
-              >
-                Unpublish Selected
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeleteTarget({ mode: 'bulk', count: selectedContentIds.length })}
-                disabled={bulkDeleteLoading || bulkStatusLoading}
-                style={styles.deleteBtn}
-              >
-                {bulkDeleteLoading ? 'Deleting...' : `Delete Selected (${selectedContentIds.length})`}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        <div style={styles.tableWrap}>
-          <table style={{ ...styles.table, ...(isMobile ? styles.tableMobile : isTablet ? styles.tableTablet : {}) }}>
-            <thead>
-              <tr>
-                <th style={styles.thCheckbox}>
-                  <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAllVisible} />
-                </th>
-                <th style={styles.th}>Title</th>
-                {visibleColumns.status ? <th style={styles.th}>Status</th> : null}
-                {visibleColumns.metadata ? <th style={styles.th}>Metadata</th> : null}
-                {visibleColumns.source ? <th style={styles.th}>Source</th> : null}
-                {visibleColumns.actions ? <th style={styles.th}>Actions</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={2 + Number(visibleColumns.status) + Number(visibleColumns.metadata) + Number(visibleColumns.source) + Number(visibleColumns.actions)} style={styles.tableEmpty}>Loading first page...</td>
-                </tr>
-              ) : !allContent.length ? (
-                <tr>
-                  <td colSpan={2 + Number(visibleColumns.status) + Number(visibleColumns.metadata) + Number(visibleColumns.source) + Number(visibleColumns.actions)} style={styles.tableEmpty}>
-                    No content matched the current filters.
-                    <div style={styles.actionRow}>
-                      <button type="button" onClick={resetFilters} style={styles.secondaryMiniBtn}>Clear Filters</button>
-                      <button type="button" onClick={() => startTransition(() => setPagination((current) => ({ ...current, page: 1 })))} style={styles.secondaryMiniBtn}>Back To Page 1</button>
-                    </div>
-                  </td>
-                </tr>
-              ) : allContent.map((item) => (
-                <tr key={item.id} style={styles.tableRow}>
-                  <td style={styles.tdCheckbox}>
-                    <input
-                      type="checkbox"
-                      checked={selectedContentIds.includes(item.id)}
-                      onChange={() => toggleContentSelection(item.id)}
-                    />
-                  </td>
-                  <td style={styles.td}>
-                    <div style={styles.titleCell}>
+              <div style={styles.draftGrid}>
+                {auxLoading && !drafts.length ? (
+                  <div style={styles.empty}>Loading scanner drafts...</div>
+                ) : null}
+                {spotlightDrafts.length ? spotlightDrafts.map((item) => (
+                  <article key={item.id} style={{ ...styles.draftCard, ...(isMobile ? styles.draftCardMobile : {}) }}>
+                    <div style={styles.draftVisual}>
                       <ContentPoster
                         src={resolvePosterSource(item)}
                         alt={item.title}
-                        style={styles.tablePoster}
-                        variant="table"
-                        fallbackText="No Art"
+                        style={styles.posterPreview}
+                        variant="preview"
+                        fallbackText="No Poster"
                       />
-                      <div>
-                        <div style={styles.tableTitleRow}>
-                          <strong style={styles.itemTitle}>{item.title}</strong>
-                          {Number(item.duplicateCount || 0) > 0 ? (
-                            <span style={styles.inlineDuplicateBadge}>{item.duplicateCount} dup</span>
-                          ) : null}
-                          {item.featured ? <span style={styles.inlineFeaturedBadge}>Featured</span> : null}
-                          {item.collection ? <span style={styles.inlineCollectionBadge}>{item.collection}</span> : null}
-                        </div>
-                        <span style={styles.metaLine}>{item.type} | {item.category || '-'} | {item.year || 'N/A'}</span>
-                        <span style={styles.metaLine}>{item.language || 'Unknown'} | {item.sourceRootLabel || item.sourceRootId || item.sourceType}</span>
-                        {item.tags?.length ? <span style={styles.metaLine}>Tags: {toTagString(item.tags)}</span> : null}
-                        {Array.isArray(item.duplicateCandidates) && item.duplicateCandidates.length ? (
-                          <span style={styles.metaLine}>
-                            Match: {item.duplicateCandidates.slice(0, 2).map((entry) => entry.title).join(', ')}
-                          </span>
+                    </div>
+                    <div style={styles.draftBody}>
+                      <div style={styles.draftTop}>
+                        <strong style={styles.itemTitle}>{item.title}</strong>
+                        {Number(item.duplicateCount || 0) > 0 ? (
+                          <span style={styles.duplicateBadge}>{item.duplicateCount} dup</span>
                         ) : null}
-                        {item.sourcePath ? <span style={styles.pathCell}>{item.sourcePath}</span> : null}
+                      </div>
+                      <span style={styles.metaLine}>{item.type} | {item.category || '-'} | {item.year || 'N/A'}</span>
+                      <span style={styles.metaLine}>{item.language || 'Unknown'} | {item.sourceType}</span>
+                      <span style={styles.metaLine}>Metadata: {item.metadataStatus || 'pending'} ({item.metadataConfidence || 0}%)</span>
+                      <div style={styles.actionRow}>
+                        <Link to={`/admin/content/${item.id}/edit`} style={styles.secondaryMiniBtn}>Review</Link>
+                        <button type="button" onClick={() => handlePublish(item.id)} style={styles.publishBtn}>Publish</button>
+                        <Link to={`/watch/${item.id}`} style={styles.secondaryMiniBtn}>Play</Link>
                       </div>
                     </div>
-                  </td>
-                  {visibleColumns.status ? (
-                    <td style={styles.td}>
-                      <span
-                        style={{
-                          ...styles.statusPill,
-                          ...(item.status === 'published' ? styles.statusPublished : styles.statusDraft),
-                        }}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                  ) : null}
-                  {visibleColumns.metadata ? (
-                    <td style={styles.td}>
-                      <div style={{ ...styles.signalPill, ...getMetadataTone(item) }}>
-                        {item.metadataStatus || 'pending'}
-                      </div>
-                      <span style={styles.metaLine}>{item.metadataConfidence || 0}% confidence</span>
-                      <span style={styles.metaLine}>Updated: {formatWhen(item.metadataUpdatedAt || item.updatedAt)}</span>
-                    </td>
-                  ) : null}
-                  {visibleColumns.source ? (
-                    <td style={styles.td}>
-                      <span style={styles.metaLine}>Type: {item.sourceType || '-'}</span>
-                      <span style={styles.metaLine}>Trending: {item.trendingScore || 0}</span>
-                      <span style={styles.metaLine}>Duplicates: {item.duplicateCount || 0}</span>
-                      {item.featuredOrder ? <span style={styles.metaLine}>Feature Slot: {item.featuredOrder}</span> : null}
-                      {item.adminNotes ? <span style={styles.metaLine}>Note: {item.adminNotes}</span> : null}
-                    </td>
-                  ) : null}
-                  {visibleColumns.actions ? (
-                    <td style={styles.td}>
-                      <div style={styles.actionRow}>
-                        {item.videoUrl ? <Link to={`/watch/${item.id}`} style={styles.secondaryMiniBtn}>Play</Link> : null}
-                        <Link to={`/admin/content/${item.id}/edit`} style={styles.secondaryMiniBtn}>Edit</Link>
-                        {item.status === 'published' ? (
-                          <button type="button" onClick={() => handleUnpublish(item.id)} style={styles.secondaryMiniBtn}>Unpublish</button>
-                        ) : (
-                          <button type="button" onClick={() => handlePublish(item.id)} style={styles.publishBtn}>Publish</button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget({ mode: 'single', id: item.id, title: item.title })}
-                          style={styles.deleteBtn}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                  </article>
+                )) : (
+                  <div style={styles.empty}>No draft content is waiting right now.</div>
+                )}
+              </div>
+            </section>
 
-      <section style={styles.paginationSection}>
-        <div style={styles.paginationControls}>
-          <span style={styles.paginationInfo}>
-            Page {pagination.page} of {totalPages} | Showing {allContent.length} of {pagination.total}
-          </span>
-          <div style={styles.paginationButtons}>
-            <button
-              type="button"
-              onClick={() => goToPage(pagination.page - 1)}
-              disabled={pagination.page <= 1 || contentRefreshing}
-              style={styles.paginationBtn}
-            >
-              Previous
+            <section style={styles.section}>
+              <div style={styles.sectionHeader}>
+                <div>
+                  <span style={styles.sectionEyebrow}>Quality Control</span>
+                  <h3 style={styles.sectionTitle}>Health And Duplicates</h3>
+                </div>
+              </div>
+              <div style={styles.healthList}>
+                <div style={styles.healthCard}>
+                  <div style={styles.healthRow}>
+                    <strong>Scanner Health</strong>
+                    <span style={styles.metaInline}>
+                      {healthSummary.healthyRoots} healthy / {healthSummary.brokenRoots} broken / {healthSummary.remoteRoots} remote
+                    </span>
+                  </div>
+                  <span style={styles.metaLine}>Current job: {currentJob?.status || 'idle'}</span>
+                </div>
+                <div style={styles.healthCard}>
+                  <div style={styles.healthRow}>
+                    <strong>Database Health</strong>
+                    <span style={styles.metaInline}>{dbHealth?.databaseSize || '...'}</span>
+                  </div>
+                  <span style={styles.metaLine}>
+                    Pool: total {dbHealth?.pool?.total ?? '-'} | idle {dbHealth?.pool?.idle ?? '-'} | waiting {dbHealth?.pool?.waiting ?? '-'}
+                  </span>
+                </div>
+                <div style={styles.healthCard}>
+                  <div style={styles.healthRow}>
+                    <strong>Duplicate Review</strong>
+                    <span style={styles.metaInline}>{duplicateStats.totalItems} items</span>
+                  </div>
+                  <span style={styles.metaLine}>
+                    Exact: {duplicateStats.exactDuplicates} | Pending review: {duplicateStats.pendingReview}
+                  </span>
+                </div>
+              </div>
+
+              <div style={styles.duplicateShelf}>
+                {auxLoading && !duplicateHighlights.length ? (
+                  <div style={styles.empty}>Loading duplicate review...</div>
+                ) : null}
+                {duplicateHighlights.length ? duplicateHighlights.map((entry, index) => (
+                  <div key={entry.id || entry.titleKey || index} style={styles.duplicateShelfCard}>
+                    <strong>{entry.title || entry.titleKey || `Duplicate Group ${index + 1}`}</strong>
+                    <span style={styles.metaLine}>
+                      {(entry.items || entry.matches || []).length || entry.count || 0} possible matches
+                    </span>
+                    <span style={styles.metaLine}>
+                      {(entry.items || entry.matches || []).slice(0, 3).map((item) => item.title || item.originalTitle).filter(Boolean).join(', ') || 'Review in content table'}
+                    </span>
+                  </div>
+                )) : (
+                  <div style={styles.empty}>No duplicate groups reported.</div>
+                )}
+              </div>
+
+              <div style={styles.logList}>
+                {auxLoading && !logs.length ? (
+                  <div style={styles.empty}>Loading recent scanner logs...</div>
+                ) : null}
+                {logs.map((log, index) => (
+                  <div key={`${index}-${log.startedAt || log.endedAt || log.status}`} style={styles.logCard}>
+                    <strong>{log.status || 'completed'}</strong>
+                    <span style={styles.metaLine}>
+                      {formatWhen(log.startedAt || log.endedAt)} | Added {log.createdCount || 0} | Updated {log.updatedCount || 0}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          {/* Scanner tab — run controls */}
+          <div style={styles.scannerControls}>
+            <button onClick={handleRunScanner} disabled={scanLoading || loading} style={styles.primaryBtn}>
+              {scanLoading ? 'Scanning...' : `Run Scanner (${selectedRootIds.length || roots.length} roots)`}
             </button>
-            {pageWindow.map((pageNumber) => (
-              <button
-                key={pageNumber}
-                type="button"
-                onClick={() => goToPage(pageNumber)}
-                disabled={contentRefreshing}
-                style={{
-                  ...styles.paginationBtn,
-                  ...(pageNumber === pagination.page ? styles.paginationBtnActive : {}),
-                }}
-              >
-                {pageNumber}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => goToPage(pagination.page + 1)}
-              disabled={pagination.page >= totalPages || contentRefreshing}
-              style={styles.paginationBtn}
-            >
-              Next
+            <button onClick={handleStopScanner} disabled={scanLoading || currentJob?.status !== 'running'} style={styles.secondaryBtn}>
+              Stop Scanner
             </button>
-            <div style={styles.pageJumpGroup}>
-              <span style={styles.paginationInfo}>Go to</span>
-              <input
-                type="number"
-                min="1"
-                max={totalPages}
-                value={pageInput}
-                onChange={(event) => setPageInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    goToPage(pageInput);
-                  }
-                }}
-                style={styles.pageJumpInput}
-              />
-              <button
-                type="button"
-                onClick={() => goToPage(pageInput)}
-                disabled={contentRefreshing}
-                style={styles.paginationBtn}
-              >
-                Go
-              </button>
+            <div style={styles.scannerMeta}>
+              <span>Healthy: {healthSummary.healthyRoots}</span>
+              <span>Broken: {healthSummary.brokenRoots}</span>
+              <span>Last: {formatWhen(currentJob?.updatedAt || currentJob?.startedAt)}</span>
             </div>
           </div>
+        </>)} {/* end scanner tab */}
+
+      {/* ══ TOOLS TAB ════════════════════════════════════════════════════════ */}
+      {activeTab === 'tools' && (
+        <div style={styles.toolsGrid}>
+          <section style={styles.section}>
+            <h3 style={styles.sectionTitle}>Library Snapshot</h3>
+            <div style={styles.metricsGrid}>
+              <StatCard label="Total" value={contentMetrics.total} hint="all records" accent />
+              <StatCard label="Published" value={contentMetrics.published} hint="live on portal" />
+              <StatCard label="Drafts" value={contentMetrics.drafts} hint="pending review" />
+              <StatCard label="Needs Review" value={contentMetrics.needsReview} hint="metadata issues" />
+              <StatCard label="Scanner" value={contentMetrics.scanner} hint="imported" />
+              <StatCard label="Manual" value={contentMetrics.manual} hint="created by editors" />
+            </div>
+          </section>
+          <section style={styles.section}>
+            <h3 style={styles.sectionTitle}>Maintenance</h3>
+            <div style={styles.toolsActions}>
+              <button onClick={handleDuplicateCleanup} disabled={duplicateCleanupLoading} style={styles.toolBtn}>
+                {duplicateCleanupLoading ? 'Cleaning...' : 'Cleanup Duplicates'}
+              </button>
+              <button onClick={handlePruneCatalog} disabled={pruneLoading} style={styles.toolBtn}>
+                {pruneLoading ? 'Pruning...' : 'Prune Catalog'}
+              </button>
+              <button onClick={handleVacuumDatabase} disabled={vacuumLoading} style={styles.toolBtn}>
+                {vacuumLoading ? 'Optimizing...' : 'Optimize DB'}
+              </button>
+            </div>
+            <div style={styles.healthList}>
+              <div style={styles.healthCard}>
+                <div style={styles.healthRow}><strong>Database</strong><span style={styles.metaInline}>{dbHealth?.databaseSize || '...'}</span></div>
+                <span style={styles.metaLine}>Pool: {dbHealth?.pool?.total ?? '-'} total | {dbHealth?.pool?.idle ?? '-'} idle</span>
+              </div>
+              <div style={styles.healthCard}>
+                <div style={styles.healthRow}><strong>Duplicates</strong><span style={styles.metaInline}>{duplicateStats.totalItems} items</span></div>
+                <span style={styles.metaLine}>Exact: {duplicateStats.exactDuplicates} | Pending: {duplicateStats.pendingReview}</span>
+              </div>
+            </div>
+          </section>
+          <section style={styles.section}>
+            <h3 style={styles.sectionTitle}>Collections & Tags</h3>
+            <div style={styles.metricsGrid}>
+              {(organization?.collections || []).slice(0, 4).map((entry) => (
+                <StatCard key={`col-${entry.label}`} label={entry.label} value={entry.count} hint="in collection" />
+              ))}
+              {(organization?.tags || []).slice(0, 4).map((entry) => (
+                <StatCard key={`tag-${entry.label}`} label={`#${entry.label}`} value={entry.count} hint="tagged" />
+              ))}
+            </div>
+          </section>
         </div>
-      </section>
+      )} {/* end tools tab */}
+
+      {/* ══ CONTENT TAB ══════════════════════════════════════════════════════ */}
+      {activeTab === 'content' && (
+        <>
+          <section style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <div>
+                <span style={styles.sectionEyebrow}>Filter And Manage</span>
+                <h3 style={styles.sectionTitle}>Content Library</h3>
+              </div>
+              <div style={styles.catalogTools}>
+                <span style={styles.summaryPill}>{pagination.total} total</span>
+                <span style={styles.summaryPill}>{selectedContentIds.length} selected</span>
+                <span style={styles.summaryPill}>{allContent.length} visible</span>
+                {contentRefreshing && !loading ? <span style={styles.summaryPill}>Refreshing...</span> : null}
+                <button type="button" onClick={exportVisibleContentCsv} style={styles.secondaryMiniBtn}>Export CSV</button>
+              </div>
+            </div>
+
+            <div style={styles.filterGrid}>
+              <div style={styles.field}>
+                <label style={styles.searchLabel}>Search</label>
+                <input
+                  type="text"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Search title, genre, language, category..."
+                  style={styles.input}
+                />
+              </div>
+              <div style={styles.field}>
+                <label style={styles.searchLabel}>Status</label>
+                <select value={filters.status} onChange={(event) => updateFilter('status', event.target.value)} style={styles.select}>
+                  <option value="">All Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="published">Published</option>
+                </select>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.searchLabel}>Source</label>
+                <select value={filters.source} onChange={(event) => updateFilter('source', event.target.value)} style={styles.select}>
+                  <option value="">All Sources</option>
+                  <option value="scanner">Scanner</option>
+                  <option value="manual">Manual</option>
+                </select>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.searchLabel}>Language</label>
+                <select value={filters.language} onChange={(event) => updateFilter('language', event.target.value)} style={styles.select}>
+                  <option value="">All Languages</option>
+                  {filterOptions.languages.map((language) => (
+                    <option key={language} value={language}>{language}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.searchLabel}>Category</label>
+                <select value={filters.category} onChange={(event) => updateFilter('category', event.target.value)} style={styles.select}>
+                  <option value="">All Categories</option>
+                  {filterOptions.categories.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.searchLabel}>Collection</label>
+                <select value={filters.collection} onChange={(event) => updateFilter('collection', event.target.value)} style={styles.select}>
+                  <option value="">All Collections</option>
+                  {filterOptions.collections.map((collection) => (
+                    <option key={collection} value={collection}>{collection}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.searchLabel}>Tag</label>
+                <select value={filters.tag} onChange={(event) => updateFilter('tag', event.target.value)} style={styles.select}>
+                  <option value="">All Tags</option>
+                  {filterOptions.tags.map((tag) => (
+                    <option key={tag} value={tag}>{tag}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={styles.field}>
+                <label style={styles.searchLabel}>Root</label>
+                <select value={filters.sourceRootId} onChange={(event) => updateFilter('sourceRootId', event.target.value)} style={styles.select}>
+                  <option value="">All Roots</option>
+                  {roots.map((root) => (
+                    <option key={root.id} value={root.id}>{root.label || root.id}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div style={styles.quickFilterBar}>
+              <button type="button" onClick={() => updateFilter('duplicatesOnly', !filters.duplicatesOnly)} style={{ ...styles.quickChip, ...(filters.duplicatesOnly ? styles.quickChipActive : {}) }}>
+                Duplicates Only
+              </button>
+              <button type="button" onClick={() => updateFilter('status', filters.status === 'draft' ? '' : 'draft')} style={{ ...styles.quickChip, ...(filters.status === 'draft' ? styles.quickChipActive : {}) }}>
+                Drafts
+              </button>
+              <button type="button" onClick={() => updateFilter('status', filters.status === 'published' ? '' : 'published')} style={{ ...styles.quickChip, ...(filters.status === 'published' ? styles.quickChipActive : {}) }}>
+                Published
+              </button>
+              <button type="button" onClick={() => updateFilter('source', filters.source === 'scanner' ? '' : 'scanner')} style={{ ...styles.quickChip, ...(filters.source === 'scanner' ? styles.quickChipActive : {}) }}>
+                Scanner
+              </button>
+              <button type="button" onClick={() => updateFilter('source', filters.source === 'manual' ? '' : 'manual')} style={{ ...styles.quickChip, ...(filters.source === 'manual' ? styles.quickChipActive : {}) }}>
+                Manual
+              </button>
+              <button type="button" onClick={() => updateFilter('collection', filters.collection === (organization?.collections?.[0]?.label || '') ? '' : (organization?.collections?.[0]?.label || ''))} style={{ ...styles.quickChip, ...(filters.collection && filters.collection === organization?.collections?.[0]?.label ? styles.quickChipActive : {}) }}>
+                Top Collection
+              </button>
+              <button
+                type="button"
+                onClick={resetFilters}
+                style={styles.quickChipClear}
+              >
+                Clear Filters
+              </button>
+            </div>
+
+            <div style={styles.bulkBar}>
+              <span style={styles.metaInline}>Saved Presets</span>
+              <div style={styles.actionRow}>
+                <input
+                  type="text"
+                  value={presetName}
+                  onChange={(event) => setPresetName(event.target.value)}
+                  placeholder="Preset name"
+                  style={styles.bulkInput}
+                />
+                <button type="button" onClick={saveCurrentPreset} style={styles.secondaryMiniBtn}>Save Preset</button>
+                {savedPresets.slice(0, 5).map((preset) => (
+                  <div key={preset.id} style={styles.presetChipWrap}>
+                    <button type="button" onClick={() => applyPreset(preset)} style={styles.quickChip}>{preset.name}</button>
+                    <button type="button" onClick={() => removePreset(preset.id)} style={styles.presetDelete}>x</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={styles.bulkBar}>
+              <span style={styles.metaInline}>Visible Columns</span>
+              <div style={styles.actionRow}>
+                <button type="button" onClick={() => toggleColumn('status')} style={{ ...styles.quickChip, ...(visibleColumns.status ? styles.quickChipActive : {}) }}>Status</button>
+                <button type="button" onClick={() => toggleColumn('metadata')} style={{ ...styles.quickChip, ...(visibleColumns.metadata ? styles.quickChipActive : {}) }}>Metadata</button>
+                <button type="button" onClick={() => toggleColumn('source')} style={{ ...styles.quickChip, ...(visibleColumns.source ? styles.quickChipActive : {}) }}>Source</button>
+                <button type="button" onClick={() => toggleColumn('actions')} style={{ ...styles.quickChip, ...(visibleColumns.actions ? styles.quickChipActive : {}) }}>Actions</button>
+              </div>
+            </div>
+
+            <div style={styles.bulkBar}>
+              <span style={styles.metaInline}>
+                Page size
+              </span>
+              <div style={styles.actionRow}>
+                {[25, 50, 100].map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => startTransition(() => setPagination((current) => ({ ...current, page: 1, limit: size })))}
+                    style={{
+                      ...styles.quickChip,
+                      ...(pagination.limit === size ? styles.quickChipActive : {}),
+                    }}
+                  >
+                    {size}
+                  </button>
+                ))}
+                <button type="button" onClick={resetFilters} style={styles.secondaryMiniBtn}>Reset View</button>
+              </div>
+            </div>
+
+            {selectedContentIds.length ? (
+              <div style={styles.bulkBar}>
+                <span style={styles.metaInline}>{selectedContentIds.length} items selected</span>
+                <div style={styles.actionRow}>
+                  <input
+                    type="text"
+                    value={bulkEditor.collection}
+                    onChange={(event) => setBulkEditor((current) => ({ ...current, collection: event.target.value }))}
+                    placeholder="Collection"
+                    style={styles.bulkInput}
+                  />
+                  <input
+                    type="text"
+                    value={bulkEditor.tags}
+                    onChange={(event) => setBulkEditor((current) => ({ ...current, tags: event.target.value }))}
+                    placeholder="tags, comma separated"
+                    style={styles.bulkInput}
+                  />
+                  <input
+                    type="number"
+                    value={bulkEditor.featuredOrder}
+                    onChange={(event) => setBulkEditor((current) => ({ ...current, featuredOrder: event.target.value }))}
+                    placeholder="Feature"
+                    style={{ ...styles.bulkInput, width: '100px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleBulkOrganize}
+                    disabled={bulkUpdateLoading || bulkStatusLoading}
+                    style={styles.publishBtn}
+                  >
+                    {bulkUpdateLoading ? 'Organizing...' : 'Bulk Organize'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkStatusUpdate('published')}
+                    disabled={bulkStatusLoading || bulkUpdateLoading}
+                    style={styles.publishBtn}
+                  >
+                    {bulkStatusLoading ? 'Updating...' : 'Publish Selected'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkStatusUpdate('draft')}
+                    disabled={bulkStatusLoading || bulkUpdateLoading}
+                    style={styles.secondaryMiniBtn}
+                  >
+                    Unpublish Selected
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget({ mode: 'bulk', count: selectedContentIds.length })}
+                    disabled={bulkDeleteLoading || bulkStatusLoading}
+                    style={styles.deleteBtn}
+                  >
+                    {bulkDeleteLoading ? 'Deleting...' : `Delete Selected (${selectedContentIds.length})`}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div style={styles.tableWrap}>
+              <table style={{ ...styles.table, ...(isMobile ? styles.tableMobile : isTablet ? styles.tableTablet : {}) }}>
+                <thead>
+                  <tr>
+                    <th style={styles.thCheckbox}>
+                      <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAllVisible} />
+                    </th>
+                    <th style={styles.th}>Title</th>
+                    {visibleColumns.status ? <th style={styles.th}>Status</th> : null}
+                    {visibleColumns.metadata ? <th style={styles.th}>Metadata</th> : null}
+                    {visibleColumns.source ? <th style={styles.th}>Source</th> : null}
+                    {visibleColumns.actions ? <th style={styles.th}>Actions</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={2 + Number(visibleColumns.status) + Number(visibleColumns.metadata) + Number(visibleColumns.source) + Number(visibleColumns.actions)} style={styles.tableEmpty}>Loading first page...</td>
+                    </tr>
+                  ) : !allContent.length ? (
+                    <tr>
+                      <td colSpan={2 + Number(visibleColumns.status) + Number(visibleColumns.metadata) + Number(visibleColumns.source) + Number(visibleColumns.actions)} style={styles.tableEmpty}>
+                        No content matched the current filters.
+                        <div style={styles.actionRow}>
+                          <button type="button" onClick={resetFilters} style={styles.secondaryMiniBtn}>Clear Filters</button>
+                          <button type="button" onClick={() => startTransition(() => setPagination((current) => ({ ...current, page: 1 })))} style={styles.secondaryMiniBtn}>Back To Page 1</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : allContent.map((item) => (
+                    <tr key={item.id} style={styles.tableRow}>
+                      <td style={styles.tdCheckbox}>
+                        <input
+                          type="checkbox"
+                          checked={selectedContentIds.includes(item.id)}
+                          onChange={() => toggleContentSelection(item.id)}
+                        />
+                      </td>
+                      <td style={styles.td}>
+                        <div style={styles.titleCell}>
+                          <ContentPoster
+                            src={resolvePosterSource(item)}
+                            alt={item.title}
+                            style={styles.tablePoster}
+                            variant="table"
+                            fallbackText="No Art"
+                          />
+                          <div>
+                            <div style={styles.tableTitleRow}>
+                              <strong style={styles.itemTitle}>{item.title}</strong>
+                              {Number(item.duplicateCount || 0) > 0 ? (
+                                <span style={styles.inlineDuplicateBadge}>{item.duplicateCount} dup</span>
+                              ) : null}
+                              {item.featured ? <span style={styles.inlineFeaturedBadge}>Featured</span> : null}
+                              {item.collection ? <span style={styles.inlineCollectionBadge}>{item.collection}</span> : null}
+                            </div>
+                            <span style={styles.metaLine}>{item.type} | {item.category || '-'} | {item.year || 'N/A'}</span>
+                            <span style={styles.metaLine}>{item.language || 'Unknown'} | {item.sourceRootLabel || item.sourceRootId || item.sourceType}</span>
+                            {item.tags?.length ? <span style={styles.metaLine}>Tags: {toTagString(item.tags)}</span> : null}
+                            {Array.isArray(item.duplicateCandidates) && item.duplicateCandidates.length ? (
+                              <span style={styles.metaLine}>
+                                Match: {item.duplicateCandidates.slice(0, 2).map((entry) => entry.title).join(', ')}
+                              </span>
+                            ) : null}
+                            {item.sourcePath ? <span style={styles.pathCell}>{item.sourcePath}</span> : null}
+                          </div>
+                        </div>
+                      </td>
+                      {visibleColumns.status ? (
+                        <td style={styles.td}>
+                          <span
+                            style={{
+                              ...styles.statusPill,
+                              ...(item.status === 'published' ? styles.statusPublished : styles.statusDraft),
+                            }}
+                          >
+                            {item.status}
+                          </span>
+                        </td>
+                      ) : null}
+                      {visibleColumns.metadata ? (
+                        <td style={styles.td}>
+                          <div style={{ ...styles.signalPill, ...getMetadataTone(item) }}>
+                            {item.metadataStatus || 'pending'}
+                          </div>
+                          <span style={styles.metaLine}>{item.metadataConfidence || 0}% confidence</span>
+                          <span style={styles.metaLine}>Updated: {formatWhen(item.metadataUpdatedAt || item.updatedAt)}</span>
+                        </td>
+                      ) : null}
+                      {visibleColumns.source ? (
+                        <td style={styles.td}>
+                          <span style={styles.metaLine}>Type: {item.sourceType || '-'}</span>
+                          <span style={styles.metaLine}>Trending: {item.trendingScore || 0}</span>
+                          <span style={styles.metaLine}>Duplicates: {item.duplicateCount || 0}</span>
+                          {item.featuredOrder ? <span style={styles.metaLine}>Feature Slot: {item.featuredOrder}</span> : null}
+                          {item.adminNotes ? <span style={styles.metaLine}>Note: {item.adminNotes}</span> : null}
+                        </td>
+                      ) : null}
+                      {visibleColumns.actions ? (
+                        <td style={styles.td}>
+                          <div style={styles.actionRow}>
+                            {item.videoUrl ? <Link to={`/watch/${item.id}`} style={styles.secondaryMiniBtn}>Play</Link> : null}
+                            <Link to={`/admin/content/${item.id}/edit`} style={styles.secondaryMiniBtn}>Edit</Link>
+                            {item.status === 'published' ? (
+                              <button type="button" onClick={() => handleUnpublish(item.id)} style={styles.secondaryMiniBtn}>Unpublish</button>
+                            ) : (
+                              <button type="button" onClick={() => handlePublish(item.id)} style={styles.publishBtn}>Publish</button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTarget({ mode: 'single', id: item.id, title: item.title })}
+                              style={styles.deleteBtn}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section style={styles.paginationSection}>
+            <div style={styles.paginationControls}>
+              <span style={styles.paginationInfo}>
+                Page {pagination.page} of {totalPages} | Showing {allContent.length} of {pagination.total}
+              </span>
+              <div style={styles.paginationButtons}>
+                <button
+                  type="button"
+                  onClick={() => goToPage(pagination.page - 1)}
+                  disabled={pagination.page <= 1 || contentRefreshing}
+                  style={styles.paginationBtn}
+                >
+                  Previous
+                </button>
+                {pageWindow.map((pageNumber) => (
+                  <button
+                    key={pageNumber}
+                    type="button"
+                    onClick={() => goToPage(pageNumber)}
+                    disabled={contentRefreshing}
+                    style={{
+                      ...styles.paginationBtn,
+                      ...(pageNumber === pagination.page ? styles.paginationBtnActive : {}),
+                    }}
+                  >
+                    {pageNumber}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => goToPage(pagination.page + 1)}
+                  disabled={pagination.page >= totalPages || contentRefreshing}
+                  style={styles.paginationBtn}
+                >
+                  Next
+                </button>
+                <div style={styles.pageJumpGroup}>
+                  <span style={styles.paginationInfo}>Go to</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={totalPages}
+                    value={pageInput}
+                    onChange={(event) => setPageInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        goToPage(pageInput);
+                      }
+                    }}
+                    style={styles.pageJumpInput}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => goToPage(pageInput)}
+                    disabled={contentRefreshing}
+                    style={styles.paginationBtn}
+                  >
+                    Go
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </>)} {/* end content tab */}
 
       <ConfirmDialog
         isOpen={Boolean(deleteTarget)}
@@ -1767,148 +1777,228 @@ function ContentLibraryPage() {
   );
 }
 
-const panelBg = 'linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03))';
+const panelBg = '#111318';
+const ACCENT = '#6366f1';
+const ACCENT_LIGHT = 'rgba(99,102,241,0.1)';
+const ACCENT_BORDER = 'rgba(99,102,241,0.25)';
+const SURFACE2 = '#181b22';
+const BORDER = 'rgba(255,255,255,0.07)';
+const TEXT = '#f1f5f9';
+const TEXT2 = '#94a3b8';
+const TEXT3 = '#475569';
 
 const styles = {
-  page: { display: 'grid', gap: '16px' },
+  page: { display: 'grid', gap: '14px' },
+
+  // ── Page header ──────────────────────────────────────────────────────────
+  pageHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '16px',
+    flexWrap: 'wrap',
+  },
+  pageTitle2: { fontSize: '1.1rem', fontWeight: '700', color: TEXT, margin: 0 },
+  pageHeaderMeta: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: TEXT2, marginTop: '4px', flexWrap: 'wrap' },
+  metaDot: { color: TEXT3 },
+  scanningLabel: { color: '#4ade80', fontWeight: '600' },
+  pageHeaderActions: { display: 'flex', gap: '8px', flexShrink: 0 },
+  addBtn2: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', background: ACCENT, color: '#fff', fontSize: '0.82rem', fontWeight: '600', textDecoration: 'none' },
+
+  // ── Tab bar ───────────────────────────────────────────────────────────────
+  tabBar: {
+    display: 'flex',
+    gap: '2px',
+    borderBottom: `1px solid ${BORDER}`,
+    paddingBottom: '0',
+  },
+  tabBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 16px',
+    borderRadius: '8px 8px 0 0',
+    background: 'transparent',
+    color: TEXT2,
+    fontSize: '0.875rem',
+    fontWeight: '500',
+    cursor: 'pointer',
+    border: 'none',
+    borderBottom: '2px solid transparent',
+    marginBottom: '-1px',
+  },
+  tabBtnActive: {
+    color: TEXT,
+    fontWeight: '600',
+    borderBottomColor: ACCENT,
+    background: ACCENT_LIGHT,
+  },
+  tabCount: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '20px',
+    height: '20px',
+    padding: '0 6px',
+    borderRadius: '10px',
+    background: SURFACE2,
+    color: TEXT2,
+    fontSize: '0.72rem',
+    fontWeight: '700',
+  },
+  tabCountActive: { background: ACCENT, color: '#fff' },
+
+  // ── Scanner controls ──────────────────────────────────────────────────────
+  scannerControls: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    background: SURFACE2,
+    border: `1px solid ${BORDER}`,
+    flexWrap: 'wrap',
+  },
+  scannerMeta: { display: 'flex', gap: '12px', color: TEXT3, fontSize: '0.78rem', marginLeft: 'auto', flexWrap: 'wrap' },
+
+  // ── Tools tab ─────────────────────────────────────────────────────────────
+  toolsGrid: { display: 'grid', gap: '14px' },
+  toolsActions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
+  toolBtn: { padding: '9px 14px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}`, color: TEXT2, fontWeight: '600', fontSize: '0.82rem', cursor: 'pointer' },
+
+  // ── Legacy hero (kept for compatibility) ──────────────────────────────────
   hero: {
-    padding: '24px',
-    borderRadius: '28px',
-    background: 'linear-gradient(135deg, rgba(11,24,42,0.92), rgba(19,38,62,0.78))',
-    border: '1px solid rgba(125, 249, 255, 0.14)',
-    boxShadow: '0 24px 60px rgba(4, 10, 20, 0.28)',
+    padding: '16px',
+    borderRadius: '10px',
+    background: SURFACE2,
+    border: `1px solid ${BORDER}`,
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 1.2fr) minmax(280px, 0.8fr)',
     gap: '16px',
   },
-  heroTablet: {
-    gridTemplateColumns: '1fr',
-  },
-  heroMobile: {
-    padding: '18px',
-    gridTemplateColumns: '1fr',
-  },
-  heroCopy: { display: 'grid', gap: '12px' },
-  eyebrow: { display: 'inline-block', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.18em', fontSize: '0.72rem', fontWeight: '800' },
-  title: { color: 'var(--text-primary)', maxWidth: '16ch' },
-  subtitle: { maxWidth: '70ch', lineHeight: '1.8' },
-  heroBadgeRow: { display: 'flex', gap: '10px', flexWrap: 'wrap' },
-  heroBadge: { padding: '8px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)', fontSize: '0.82rem', fontWeight: '700' },
-  heroPanel: { display: 'grid', gap: '12px', padding: '16px', borderRadius: '22px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', alignContent: 'start' },
-  liveBadge: { display: 'inline-flex', alignItems: 'center', gap: '8px', width: 'fit-content', padding: '8px 12px', borderRadius: '999px', background: 'rgba(125,249,255,0.12)', color: 'var(--accent-cyan)', fontSize: '0.78rem', fontWeight: '700' },
-  liveDot: { width: '8px', height: '8px', borderRadius: '50%', background: 'currentColor', boxShadow: '0 0 0 6px rgba(125,249,255,0.12)' },
-  heroActionStack: { display: 'grid', gap: '8px' },
-  heroMeta: { display: 'grid', gap: '4px', color: 'var(--text-secondary)', fontSize: '0.82rem' },
-  primaryBtn: { padding: '12px 16px', borderRadius: '999px', background: 'linear-gradient(135deg, var(--accent-cyan), #05d5a1)', color: '#000', fontWeight: '800' },
-  secondaryBtn: { padding: '12px 16px', borderRadius: '999px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-primary)', fontWeight: '700', textAlign: 'center' },
-  ghostBtn: { padding: '12px 16px', borderRadius: '999px', background: 'rgba(125,249,255,0.08)', border: '1px solid rgba(125,249,255,0.16)', color: 'var(--accent-cyan)', fontWeight: '700', textAlign: 'center', textDecoration: 'none' },
-  errorBox: { padding: '14px 18px', borderRadius: '18px', background: 'rgba(255, 90, 95, 0.12)', color: '#ff8a8a', border: '1px solid rgba(255, 90, 95, 0.24)' },
-  infoBox: { padding: '14px 18px', borderRadius: '18px', background: 'rgba(56, 189, 248, 0.12)', color: '#7dd3fc', border: '1px solid rgba(56, 189, 248, 0.24)' },
-  section: { padding: '18px', borderRadius: '22px', background: panelBg, border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '14px' },
-  sectionHeader: { display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'end', flexWrap: 'wrap' },
-  catalogTools: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' },
-  sectionEyebrow: { display: 'inline-block', marginBottom: '6px', color: 'var(--accent-amber)', textTransform: 'uppercase', letterSpacing: '0.14em', fontSize: '0.72rem', fontWeight: '700' },
-  sectionTitle: { color: 'var(--text-primary)', fontSize: '1.35rem' },
-  summaryPill: { padding: '7px 11px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)', fontSize: '0.76rem', fontWeight: '700' },
-  liveScanLayout: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(280px, 0.9fr)', gap: '14px' },
-  liveScanCard: { padding: '16px', borderRadius: '18px', background: 'linear-gradient(135deg, rgba(56,189,248,0.08), rgba(249,115,22,0.08))', border: '1px solid rgba(125,249,255,0.14)', display: 'grid', gap: '12px' },
-  liveStatsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '10px' },
-  liveStatBox: { padding: '12px', borderRadius: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '4px' },
-  liveRootList: { display: 'grid', gap: '10px' },
-  liveRootCard: { padding: '12px 14px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '8px' },
-  metricsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' },
-  metricCard: { padding: '14px 16px', borderRadius: '18px', background: panelBg, border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '4px' },
-  metricCardAccent: { padding: '14px 16px', borderRadius: '18px', background: 'linear-gradient(135deg, rgba(0,240,181,0.18), rgba(125,249,255,0.12))', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '4px' },
-  metricLabel: { color: 'var(--text-muted)', fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.14em', fontWeight: '700' },
-  metricValue: { color: 'var(--text-primary)', fontSize: '1.45rem' },
-  metricHint: { color: 'var(--text-muted)' },
-  rootGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' },
-  rootCard: { padding: '14px', borderRadius: '18px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)', display: 'grid', gap: '8px', textAlign: 'left' },
+  heroTablet: { gridTemplateColumns: '1fr' },
+  heroMobile: { padding: '16px', gridTemplateColumns: '1fr' },
+  heroCopy: { display: 'grid', gap: '10px' },
+  eyebrow: { display: 'inline-block', color: ACCENT, textTransform: 'uppercase', letterSpacing: '0.12em', fontSize: '0.7rem', fontWeight: '700' },
+  title: { color: TEXT, fontSize: '1.4rem', fontWeight: '700', margin: 0 },
+  subtitle: { maxWidth: '70ch', lineHeight: '1.7', color: TEXT2, fontSize: '0.85rem' },
+  heroBadgeRow: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
+  heroBadge: { padding: '5px 10px', borderRadius: '6px', background: SURFACE2, border: `1px solid ${BORDER}`, color: TEXT2, fontSize: '0.78rem', fontWeight: '600' },
+  heroPanel: { display: 'grid', gap: '10px', padding: '14px', borderRadius: '10px', background: '#0a0c10', border: `1px solid ${BORDER}`, alignContent: 'start' },
+  liveBadge: { display: 'inline-flex', alignItems: 'center', gap: '6px', width: 'fit-content', padding: '5px 10px', borderRadius: '6px', background: ACCENT_LIGHT, color: ACCENT, fontSize: '0.75rem', fontWeight: '600' },
+  liveDot: { width: '7px', height: '7px', borderRadius: '50%', background: 'currentColor' },
+  heroActionStack: { display: 'grid', gap: '6px' },
+  heroMeta: { display: 'grid', gap: '3px', color: TEXT3, fontSize: '0.78rem' },
+  primaryBtn: { padding: '9px 14px', borderRadius: '8px', background: ACCENT, color: '#fff', fontWeight: '600', fontSize: '0.85rem', textAlign: 'center', border: 'none', cursor: 'pointer' },
+  secondaryBtn: { padding: '9px 14px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}`, color: TEXT2, fontWeight: '600', fontSize: '0.85rem', textAlign: 'center', cursor: 'pointer' },
+  ghostBtn: { padding: '9px 14px', borderRadius: '8px', background: ACCENT_LIGHT, border: `1px solid ${ACCENT_BORDER}`, color: ACCENT, fontWeight: '600', fontSize: '0.85rem', textAlign: 'center', textDecoration: 'none' },
+  errorBox: { padding: '12px 16px', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', fontSize: '0.85rem' },
+  infoBox: { padding: '12px 16px', borderRadius: '8px', background: 'rgba(56,189,248,0.08)', color: '#7dd3fc', border: '1px solid rgba(56,189,248,0.18)', fontSize: '0.85rem' },
+  section: { padding: '16px', borderRadius: '10px', background: panelBg, border: `1px solid ${BORDER}`, display: 'grid', gap: '14px' },
+  sectionHeader: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' },
+  catalogTools: { display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' },
+  sectionEyebrow: { display: 'inline-block', marginBottom: '4px', color: TEXT3, textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: '0.68rem', fontWeight: '700' },
+  sectionTitle: { color: TEXT, fontSize: '0.95rem', fontWeight: '600', margin: 0 },
+  summaryPill: { padding: '4px 10px', borderRadius: '6px', background: SURFACE2, color: TEXT2, fontSize: '0.75rem', fontWeight: '600', border: `1px solid ${BORDER}` },
+  liveScanLayout: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(280px, 0.9fr)', gap: '12px' },
+  liveScanCard: { padding: '14px', borderRadius: '10px', background: SURFACE2, border: `1px solid ${BORDER}`, display: 'grid', gap: '12px' },
+  liveStatsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px' },
+  liveStatBox: { padding: '10px', borderRadius: '8px', background: '#0a0c10', border: `1px solid ${BORDER}`, display: 'grid', gap: '4px' },
+  liveRootList: { display: 'grid', gap: '8px' },
+  liveRootCard: { padding: '10px 12px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}`, display: 'grid', gap: '6px' },
+  metricsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' },
+  metricCard: { padding: '12px 14px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}`, display: 'grid', gap: '4px' },
+  metricCardAccent: { padding: '12px 14px', borderRadius: '8px', background: ACCENT_LIGHT, border: `1px solid ${ACCENT_BORDER}`, display: 'grid', gap: '4px' },
+  metricLabel: { color: TEXT3, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' },
+  metricValue: { color: TEXT, fontSize: '1.3rem', fontWeight: '700' },
+  metricHint: { color: TEXT3, fontSize: '0.75rem' },
+  rootGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' },
+  rootCard: { padding: '12px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}`, color: TEXT2, display: 'grid', gap: '6px', textAlign: 'left', cursor: 'pointer' },
   rootCardActive: { background: 'linear-gradient(135deg, rgba(0,240,181,0.14), rgba(125,249,255,0.1))', color: 'var(--text-primary)', borderColor: 'rgba(125,249,255,0.18)' },
   rootCardBroken: { borderColor: 'rgba(255, 90, 95, 0.35)' },
   rootHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' },
   rootName: { color: 'var(--text-primary)' },
-  statusDot: { width: '10px', height: '10px', borderRadius: '50%', background: 'rgba(255,255,255,0.24)' },
-  statusDotActive: { background: 'var(--accent-cyan)', boxShadow: '0 0 0 6px rgba(125,249,255,0.12)' },
-  rootFooter: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap' },
-  rootToggle: { color: 'var(--text-muted)', fontSize: '0.78rem' },
-  okText: { color: '#86efac' },
-  warnText: { color: '#fda4af' },
-  topologyGrid: { display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '14px' },
+  statusDot: { width: '8px', height: '8px', borderRadius: '50%', background: TEXT3, flexShrink: 0 },
+  statusDotActive: { background: ACCENT },
+  rootFooter: { display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
+  rootToggle: { color: TEXT3, fontSize: '0.72rem' },
+  okText: { color: '#4ade80', fontSize: '0.75rem' },
+  warnText: { color: '#f87171', fontSize: '0.75rem' },
+  topologyGrid: { display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '12px' },
   topologyGridMobile: { gridTemplateColumns: '1fr' },
-  draftGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' },
-  draftCard: { display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: '12px', padding: '12px', borderRadius: '18px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' },
+  draftGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' },
+  draftCard: { display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr)', gap: '10px', padding: '10px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}` },
   draftCardMobile: { gridTemplateColumns: '1fr' },
   draftVisual: { display: 'flex', alignItems: 'start' },
-  posterPreview: { width: '76px', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: '12px' },
-  posterPlaceholder: { width: '76px', aspectRatio: '2 / 3', borderRadius: '12px', background: 'rgba(255,255,255,0.06)', display: 'grid', placeItems: 'center', color: 'var(--text-muted)', fontSize: '0.74rem' },
-  draftBody: { display: 'grid', gap: '6px' },
-  draftTop: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'start' },
-  itemTitle: { display: 'block', color: 'var(--text-primary)' },
-  metaLine: { display: 'block', color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '4px' },
-  pathCell: { fontSize: '0.78rem', color: 'var(--text-muted)', wordBreak: 'break-all' },
-  duplicateBadge: { padding: '4px 8px', borderRadius: '999px', background: 'rgba(250, 204, 21, 0.14)', color: '#fde047', fontSize: '0.68rem', fontWeight: '700' },
-  healthList: { display: 'grid', gap: '10px' },
-  healthCard: { padding: '12px 14px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '4px' },
-  healthRow: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center' },
-  metaInline: { color: 'var(--text-muted)' },
-  duplicateShelf: { display: 'grid', gap: '10px' },
-  duplicateShelfCard: { padding: '12px 14px', borderRadius: '14px', background: 'rgba(250, 204, 21, 0.07)', border: '1px solid rgba(250, 204, 21, 0.16)', display: 'grid', gap: '6px' },
-  logList: { display: 'grid', gap: '10px' },
-  logCard: { padding: '12px 14px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '4px' },
-  filterGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' },
-  field: { display: 'grid', gap: '8px' },
-  searchLabel: { color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.12em', fontSize: '0.72rem', fontWeight: '700' },
-  input: { padding: '11px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', color: 'var(--text-primary)', fontSize: '0.92rem', width: '100%' },
-  select: { padding: '11px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', color: 'var(--text-primary)', fontSize: '0.92rem', width: '100%' },
-  quickFilterBar: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
-  quickChip: { padding: '8px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-secondary)', fontWeight: '700', fontSize: '0.82rem' },
-  quickChipActive: { background: 'linear-gradient(135deg, rgba(0,240,181,0.18), rgba(125,249,255,0.12))', color: 'var(--text-primary)', borderColor: 'rgba(125,249,255,0.18)' },
-  quickChipClear: { padding: '8px 12px', borderRadius: '999px', background: 'rgba(255,90,95,0.12)', border: '1px solid rgba(255,90,95,0.18)', color: '#ff9ea2', fontWeight: '700', fontSize: '0.82rem' },
-  bulkBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 14px', borderRadius: '16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap' },
-  bulkInput: { padding: '9px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'var(--text-primary)', fontSize: '0.82rem', minWidth: '150px' },
+  posterPreview: { width: '64px', aspectRatio: '2 / 3', objectFit: 'cover', borderRadius: '6px' },
+  posterPlaceholder: { width: '64px', aspectRatio: '2 / 3', borderRadius: '6px', background: '#0a0c10', display: 'grid', placeItems: 'center', color: TEXT3, fontSize: '0.68rem' },
+  draftBody: { display: 'grid', gap: '4px' },
+  draftTop: { display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'start' },
+  itemTitle: { display: 'block', color: TEXT, fontSize: '0.85rem', fontWeight: '600' },
+  metaLine: { display: 'block', color: TEXT3, fontSize: '0.78rem', marginTop: '2px' },
+  pathCell: { fontSize: '0.72rem', color: TEXT3, wordBreak: 'break-all' },
+  duplicateBadge: { padding: '3px 7px', borderRadius: '4px', background: 'rgba(245,158,11,0.12)', color: '#fbbf24', fontSize: '0.68rem', fontWeight: '700' },
+  healthList: { display: 'grid', gap: '8px' },
+  healthCard: { padding: '10px 12px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}`, display: 'grid', gap: '4px' },
+  healthRow: { display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' },
+  metaInline: { color: TEXT3, fontSize: '0.8rem' },
+  duplicateShelf: { display: 'grid', gap: '8px' },
+  duplicateShelfCard: { padding: '10px 12px', borderRadius: '8px', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.14)', display: 'grid', gap: '4px' },
+  logList: { display: 'grid', gap: '8px' },
+  logCard: { padding: '10px 12px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}`, display: 'grid', gap: '4px' },
+  filterGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' },
+  field: { display: 'grid', gap: '6px' },
+  searchLabel: { color: TEXT3, textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '0.68rem', fontWeight: '600' },
+  input: { padding: '9px 12px', background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: '8px', color: TEXT, fontSize: '0.875rem', width: '100%' },
+  select: { padding: '9px 12px', background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: '8px', color: TEXT, fontSize: '0.875rem', width: '100%' },
+  quickFilterBar: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
+  quickChip: { padding: '6px 12px', borderRadius: '6px', background: SURFACE2, border: `1px solid ${BORDER}`, color: TEXT2, fontWeight: '600', fontSize: '0.78rem', cursor: 'pointer' },
+  quickChipActive: { background: ACCENT_LIGHT, color: TEXT, borderColor: ACCENT_BORDER },
+  quickChipClear: { padding: '6px 12px', borderRadius: '6px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', color: '#f87171', fontWeight: '600', fontSize: '0.78rem', cursor: 'pointer' },
+  bulkBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '10px 12px', borderRadius: '8px', background: SURFACE2, border: `1px solid ${BORDER}`, flexWrap: 'wrap' },
+  bulkInput: { padding: '7px 10px', background: '#0a0c10', border: `1px solid ${BORDER}`, borderRadius: '6px', color: TEXT, fontSize: '0.82rem', minWidth: '130px' },
   tableWrap: { overflowX: 'auto', maxHeight: '72vh', overflowY: 'auto' },
-  table: { width: '100%', borderCollapse: 'separate', borderSpacing: '0 10px', minWidth: '1040px' },
+  table: { width: '100%', borderCollapse: 'collapse', minWidth: '1040px' },
   tableTablet: { minWidth: '880px' },
   tableMobile: { minWidth: '760px' },
-  th: { position: 'sticky', top: 0, zIndex: 2, textAlign: 'left', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', fontSize: '0.75rem', padding: '10px 12px 8px', background: 'rgba(9, 17, 28, 0.96)', backdropFilter: 'blur(6px)' },
-  thCheckbox: { position: 'sticky', top: 0, zIndex: 2, width: '36px', padding: '10px 8px 8px 12px', background: 'rgba(9, 17, 28, 0.96)' },
-  tableRow: { background: 'rgba(255,255,255,0.03)' },
-  td: { padding: '14px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)', verticalAlign: 'top' },
-  tdCheckbox: { padding: '18px 8px 18px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)', width: '36px', verticalAlign: 'top' },
-  tableEmpty: { padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)' },
-  titleCell: { display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr)', gap: '12px', alignItems: 'start' },
-  tableTitleRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
-  tablePoster: { width: '48px', height: '68px', objectFit: 'cover', borderRadius: '10px' },
-  tablePosterFallback: { width: '48px', height: '68px', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', display: 'grid', placeItems: 'center', color: 'var(--text-muted)', fontSize: '0.68rem' },
-  inlineDuplicateBadge: { padding: '3px 7px', borderRadius: '999px', background: 'rgba(250, 204, 21, 0.14)', color: '#fde68a', fontSize: '0.68rem', fontWeight: '700' },
-  inlineFeaturedBadge: { padding: '3px 7px', borderRadius: '999px', background: 'rgba(56, 189, 248, 0.16)', color: '#7dd3fc', fontSize: '0.68rem', fontWeight: '700' },
-  inlineCollectionBadge: { padding: '3px 7px', borderRadius: '999px', background: 'rgba(255, 116, 79, 0.16)', color: '#ffb347', fontSize: '0.68rem', fontWeight: '700' },
-  signalPill: { width: 'fit-content', padding: '7px 11px', borderRadius: '999px', fontSize: '0.76rem', fontWeight: '700', textTransform: 'capitalize' },
-  toneSuccess: { background: 'rgba(34, 197, 94, 0.12)', color: '#86efac' },
-  toneWarning: { background: 'rgba(245, 158, 11, 0.12)', color: '#fcd34d' },
-  toneDanger: { background: 'rgba(239, 68, 68, 0.14)', color: '#fda4af' },
-  toneNeutral: { background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)' },
-  actionRow: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
-  publishBtn: { padding: '8px 11px', borderRadius: '999px', background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80', fontWeight: '700', fontSize: '0.78rem' },
-  secondaryMiniBtn: { padding: '8px 11px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', color: 'var(--text-primary)', fontWeight: '700', fontSize: '0.78rem', textDecoration: 'none' },
-  deleteBtn: { padding: '8px 11px', borderRadius: '999px', background: 'rgba(255,90,95,0.12)', color: '#ff8a8a', fontWeight: '700', fontSize: '0.78rem' },
-  statusPill: { padding: '6px 10px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: '700', textTransform: 'capitalize', display: 'inline-flex' },
-  statusPublished: { background: 'rgba(34, 197, 94, 0.12)', color: '#4ade80' },
-  statusDraft: { background: 'rgba(234, 179, 8, 0.12)', color: '#facc15' },
-  empty: { padding: '20px', borderRadius: '20px', background: 'rgba(255,255,255,0.04)', color: 'var(--text-muted)' },
-  paginationSection: { padding: '12px 18px', borderRadius: '22px', background: panelBg, border: '1px solid rgba(255,255,255,0.08)' },
-  paginationControls: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' },
-  paginationInfo: { color: 'var(--text-secondary)', fontSize: '0.82rem' },
-  paginationButtons: { display: 'flex', alignItems: 'center', gap: '12px' },
-  paginationBtn: { padding: '8px 14px', borderRadius: '999px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-primary)', fontWeight: '700', fontSize: '0.78rem' },
-  paginationBtnActive: { background: 'linear-gradient(135deg, rgba(255,116,79,0.24), rgba(125,249,255,0.16))', borderColor: 'rgba(125,249,255,0.18)' },
-  pageJumpGroup: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
-  pageJumpInput: { width: '72px', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: 'var(--text-primary)', fontSize: '0.82rem' },
-  presetChipWrap: { display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.04)', borderRadius: '999px', paddingRight: '6px' },
-  presetDelete: { width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(255,90,95,0.16)', color: '#ff9ea2', fontWeight: '700', fontSize: '0.72rem', lineHeight: 1 },
-  undoToast: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '12px 14px', borderRadius: '14px', background: 'rgba(249, 115, 22, 0.16)', border: '1px solid rgba(249, 115, 22, 0.3)', color: '#fdba74' },
-  undoBtn: { padding: '7px 12px', borderRadius: '999px', background: 'rgba(255,255,255,0.12)', color: '#fff', fontWeight: '700', fontSize: '0.8rem' },
+  th: { position: 'sticky', top: 0, zIndex: 2, textAlign: 'left', color: TEXT3, textTransform: 'uppercase', letterSpacing: '0.07em', fontSize: '0.7rem', fontWeight: '600', padding: '8px 12px', background: '#0e1015', borderBottom: `1px solid ${BORDER}` },
+  thCheckbox: { position: 'sticky', top: 0, zIndex: 2, width: '36px', padding: '8px 8px 8px 12px', background: '#0e1015', borderBottom: `1px solid ${BORDER}` },
+  tableRow: { background: 'transparent' },
+  td: { padding: '11px 12px', borderBottom: `1px solid ${BORDER}`, verticalAlign: 'middle' },
+  tdCheckbox: { padding: '11px 8px 11px 12px', borderBottom: `1px solid ${BORDER}`, width: '36px', verticalAlign: 'middle' },
+  tableEmpty: { padding: '32px 12px', textAlign: 'center', color: TEXT3 },
+  titleCell: { display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr)', gap: '10px', alignItems: 'center' },
+  tableTitleRow: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' },
+  tablePoster: { width: '44px', height: '62px', objectFit: 'cover', borderRadius: '6px' },
+  tablePosterFallback: { width: '44px', height: '62px', borderRadius: '6px', background: SURFACE2, display: 'grid', placeItems: 'center', color: TEXT3, fontSize: '0.62rem' },
+  inlineDuplicateBadge: { padding: '2px 6px', borderRadius: '4px', background: 'rgba(245,158,11,0.12)', color: '#fbbf24', fontSize: '0.68rem', fontWeight: '600' },
+  inlineFeaturedBadge: { padding: '2px 6px', borderRadius: '4px', background: ACCENT_LIGHT, color: ACCENT, fontSize: '0.68rem', fontWeight: '600' },
+  inlineCollectionBadge: { padding: '2px 6px', borderRadius: '4px', background: 'rgba(168,85,247,0.1)', color: '#c084fc', fontSize: '0.68rem', fontWeight: '600' },
+  signalPill: { width: 'fit-content', padding: '4px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', textTransform: 'capitalize' },
+  toneSuccess: { background: 'rgba(34,197,94,0.1)', color: '#4ade80' },
+  toneWarning: { background: 'rgba(245,158,11,0.1)', color: '#fbbf24' },
+  toneDanger: { background: 'rgba(239,68,68,0.1)', color: '#f87171' },
+  toneNeutral: { background: SURFACE2, color: TEXT2 },
+  actionRow: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
+  publishBtn: { padding: '6px 10px', borderRadius: '6px', background: 'rgba(34,197,94,0.1)', color: '#4ade80', fontWeight: '600', fontSize: '0.75rem', border: '1px solid rgba(34,197,94,0.2)', cursor: 'pointer' },
+  secondaryMiniBtn: { padding: '6px 10px', borderRadius: '6px', background: SURFACE2, color: TEXT2, fontWeight: '600', fontSize: '0.75rem', textDecoration: 'none', border: `1px solid ${BORDER}`, cursor: 'pointer' },
+  deleteBtn: { padding: '6px 10px', borderRadius: '6px', background: 'rgba(239,68,68,0.08)', color: '#f87171', fontWeight: '600', fontSize: '0.75rem', border: '1px solid rgba(239,68,68,0.15)', cursor: 'pointer' },
+  statusPill: { padding: '3px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', textTransform: 'capitalize', display: 'inline-flex' },
+  statusPublished: { background: 'rgba(34,197,94,0.1)', color: '#4ade80' },
+  statusDraft: { background: 'rgba(234,179,8,0.1)', color: '#facc15' },
+  empty: { padding: '20px', borderRadius: '8px', background: SURFACE2, color: TEXT3, fontSize: '0.85rem' },
+  paginationSection: { padding: '12px 16px', borderRadius: '8px', background: panelBg, border: `1px solid ${BORDER}` },
+  paginationControls: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
+  paginationInfo: { color: TEXT2, fontSize: '0.8rem' },
+  paginationButtons: { display: 'flex', alignItems: 'center', gap: '6px' },
+  paginationBtn: { padding: '6px 12px', borderRadius: '6px', background: SURFACE2, border: `1px solid ${BORDER}`, color: TEXT2, fontWeight: '600', fontSize: '0.78rem', cursor: 'pointer' },
+  paginationBtnActive: { background: ACCENT_LIGHT, borderColor: ACCENT_BORDER, color: TEXT },
+  pageJumpGroup: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' },
+  pageJumpInput: { width: '64px', padding: '6px 10px', background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: '6px', color: TEXT, fontSize: '0.82rem' },
+  presetChipWrap: { display: 'inline-flex', alignItems: 'center', gap: '4px', background: SURFACE2, borderRadius: '6px', paddingRight: '4px', border: `1px solid ${BORDER}` },
+  presetDelete: { width: '18px', height: '18px', borderRadius: '4px', background: 'rgba(239,68,68,0.1)', color: '#f87171', fontWeight: '700', fontSize: '0.68rem', lineHeight: 1, cursor: 'pointer' },
+  undoToast: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', color: '#fbbf24', fontSize: '0.85rem' },
+  undoBtn: { padding: '6px 12px', borderRadius: '6px', background: SURFACE2, color: TEXT, fontWeight: '600', fontSize: '0.78rem', border: `1px solid ${BORDER}`, cursor: 'pointer' },
 };
 
 export default ContentLibraryPage;

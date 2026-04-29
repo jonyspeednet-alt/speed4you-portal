@@ -3,296 +3,516 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminService } from '../../services';
 import { useBreakpoint } from '../../hooks';
 
-const AdminDashboard = () => {
-  const { isMobile, isTablet } = useBreakpoint();
+function StatCard({ label, value, sub, accent = false }) {
+  return (
+    <div style={{ ...s.statCard, ...(accent ? s.statCardAccent : {}) }}>
+      <span style={s.statLabel}>{label}</span>
+      <span style={s.statValue}>{value}</span>
+      {sub && <span style={s.statSub}>{sub}</span>}
+    </div>
+  );
+}
+
+function SectionHeader({ title, action }) {
+  return (
+    <div style={s.sectionHeader}>
+      <h2 style={s.sectionTitle}>{title}</h2>
+      {action}
+    </div>
+  );
+}
+
+function StatusBadge({ status }) {
+  const isPublished = status === 'published';
+  return (
+    <span style={{ ...s.badge, ...(isPublished ? s.badgeGreen : s.badgeYellow) }}>
+      {status}
+    </span>
+  );
+}
+
+function formatSeconds(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds || 0)));
+  const hh = Math.floor(total / 3600);
+  const mm = Math.floor((total % 3600) / 60);
+  const ss = total % 60;
+  if (hh > 0) return `${hh}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  return `${mm}:${String(ss).padStart(2, '0')}`;
+}
+
+export default function AdminDashboard() {
+  const { isMobile } = useBreakpoint();
   const queryClient = useQueryClient();
 
-  // Fetch Dashboard Stats
-  const { data: dashboard = { stats: {}, recentContent: [], scannerDrafts: [] }, isLoading: dashboardLoading, error: dashboardError } = useQuery({
+  const { data: dashboard = { stats: {}, recentContent: [], scannerDrafts: [] }, isLoading, error } = useQuery({
     queryKey: ['admin', 'dashboard'],
     queryFn: () => adminService.getDashboard(),
   });
 
-  // Fetch Normalizer Status (polling)
   const { data: normalizer = { running: false, state: null, recentLogLines: [] }, error: normalizerError } = useQuery({
     queryKey: ['admin', 'normalizer', 'status'],
     queryFn: () => adminService.getMediaNormalizerStatus(),
-    refetchInterval: 2000, // Poll every 2 seconds
+    refetchInterval: 2000,
   });
 
-  // Normalizer Action Mutation
   const normalizerMutation = useMutation({
-    mutationFn: (action) => action === 'start' 
-      ? adminService.startMediaNormalizer() 
+    mutationFn: (action) => action === 'start'
+      ? adminService.startMediaNormalizer()
       : adminService.stopMediaNormalizer(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'normalizer', 'status'] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'normalizer', 'status'] }),
   });
-
-  const handleNormalizerAction = async (action) => {
-    normalizerMutation.mutate(action);
-  };
 
   const stats = [
-    { label: 'Total Movies', value: dashboard.stats.totalMovies || 0, change: 'catalog items' },
-    { label: 'Total Series', value: dashboard.stats.totalSeries || 0, change: 'season-aware entries' },
-    { label: 'Draft Content', value: dashboard.stats.draftContent || 0, change: 'review pending' },
-    { label: 'Published', value: dashboard.stats.publishedContent || 0, change: 'live on portal' },
+    { label: 'Movies', value: isLoading ? '—' : (dashboard.stats.totalMovies || 0), sub: 'in catalog' },
+    { label: 'Series', value: isLoading ? '—' : (dashboard.stats.totalSeries || 0), sub: 'season-aware' },
+    { label: 'Published', value: isLoading ? '—' : (dashboard.stats.publishedContent || 0), sub: 'live on portal', accent: true },
+    { label: 'Drafts', value: isLoading ? '—' : (dashboard.stats.draftContent || 0), sub: 'pending review' },
   ];
 
   const currentProgress = normalizer.state?.currentFileProgress || null;
-  const percentValue = Math.max(0, Math.min(100, Number(currentProgress?.percent || 0)));
-
-  const formatSeconds = (seconds) => {
-    const total = Math.max(0, Math.floor(Number(seconds || 0)));
-    const hh = Math.floor(total / 3600);
-    const mm = Math.floor((total % 3600) / 60);
-    const ss = total % 60;
-    if (hh > 0) {
-      return `${hh}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
-    }
-    return `${mm}:${String(ss).padStart(2, '0')}`;
-  };
+  const pct = Math.max(0, Math.min(100, Number(currentProgress?.percent || 0)));
 
   return (
-    <div style={styles.page}>
-      <section style={{ ...styles.heroCard, ...(isMobile ? styles.heroCardMobile : isTablet ? styles.heroCardTablet : {}) }}>
-        <div>
-          <span style={styles.kicker}>Admin Pulse</span>
-          <h2 style={styles.heroTitle}>Monitor scanner imports, review metadata quality, and publish with less guesswork.</h2>
+    <div style={s.page}>
+      {/* Error */}
+      {error && (
+        <div style={s.errorBanner}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          {error.message || 'Failed to load dashboard data.'}
         </div>
-        <div style={styles.heroActions}>
-          <Link to="/admin/content/new" style={styles.primaryAction}>Add New Content</Link>
-          <Link to="/admin/content" style={styles.secondaryAction}>Open Content Library</Link>
-          <button 
-            type="button" 
-            style={styles.secondaryAction} 
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] })} 
-            disabled={dashboardLoading}
-          >
-            {dashboardLoading ? 'Refreshing...' : 'Refresh Dashboard'}
-          </button>
-        </div>
-        <span style={styles.kicker}>Status: {dashboardLoading ? 'Updating...' : 'Live'}</span>
-      </section>
+      )}
 
-      {dashboardError ? (
-        <div style={styles.errorBox}>
-          <strong>Dashboard Error:</strong> {dashboardError.message || 'Unknown error'}
-        </div>
-      ) : null}
-
-      <div style={styles.stats}>
+      {/* Stats row */}
+      <div style={{ ...s.statsGrid, ...(isMobile ? s.statsGridMobile : {}) }}>
         {stats.map((stat) => (
-          <div key={stat.label} style={styles.statCard}>
-            <span style={styles.statLabel}>{stat.label}</span>
-            <span style={styles.statValue}>{dashboardLoading ? '...' : stat.value}</span>
-            <span style={styles.statChange}>{stat.change}</span>
-          </div>
+          <StatCard key={stat.label} {...stat} />
         ))}
       </div>
 
-      <div style={{ ...styles.grid, ...(isMobile || isTablet ? styles.gridMobile : {}) }}>
-        <section style={styles.section}>
-          <div style={styles.sectionHeader}>
-            <div>
-              <span style={styles.sectionEyebrow}>Editorial Queue</span>
-              <h2 style={styles.sectionTitle}>Recent Content</h2>
-            </div>
-            <Link to="/admin/content" style={styles.viewAll}>View All</Link>
-          </div>
+      {/* Main grid */}
+      <div style={{ ...s.grid, ...(isMobile ? s.gridMobile : {}) }}>
 
-          <div style={styles.tableWrap}>
-            <table style={styles.table}>
+        {/* Recent content table */}
+        <div style={s.card}>
+          <SectionHeader
+            title="Recent Content"
+            action={
+              <Link to="/admin/content" style={s.linkBtn}>View all →</Link>
+            }
+          />
+          <div style={s.tableWrap}>
+            <table style={s.table}>
               <thead>
                 <tr>
-                  <th>Title</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Source</th>
-                  <th>Action</th>
+                  <th style={s.th}>Title</th>
+                  <th style={{ ...s.th, ...s.thNarrow }}>Type</th>
+                  <th style={{ ...s.th, ...s.thNarrow }}>Status</th>
+                  <th style={{ ...s.th, ...s.thNarrow }}>Source</th>
+                  <th style={{ ...s.th, ...s.thAction }} />
                 </tr>
               </thead>
               <tbody>
-                {(dashboard.recentContent || []).map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <strong style={styles.itemTitle}>{item.title}</strong>
-                      <span style={styles.itemMeta}>{item.category || 'Uncategorized'}</span>
-                    </td>
-                    <td>{item.type}</td>
-                    <td>
-                      <span
-                        style={{
-                          ...styles.status,
-                          ...(item.status === 'published' ? styles.statusPublished : styles.statusDraft),
-                        }}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-                    <td>{item.sourceType === 'scanner' ? 'Scanner' : 'Manual'}</td>
-                    <td>
-                      <Link to={`/admin/content/${item.id}/edit`} style={styles.editBtn}>Review</Link>
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i}>
+                      {Array.from({ length: 5 }).map((__, j) => (
+                        <td key={j} style={s.td}>
+                          <div style={{ ...s.skeleton, width: j === 0 ? '140px' : '60px' }} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : (dashboard.recentContent || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ ...s.td, textAlign: 'center', color: TEXT3, padding: '32px' }}>
+                      No content yet
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  (dashboard.recentContent || []).map((item) => (
+                    <tr key={item.id} style={s.tr}>
+                      <td style={s.td}>
+                        <span style={s.itemTitle}>{item.title}</span>
+                        <span style={s.itemMeta}>{item.category || 'Uncategorized'}</span>
+                      </td>
+                      <td style={s.td}>
+                        <span style={s.typeChip}>{item.type}</span>
+                      </td>
+                      <td style={s.td}>
+                        <StatusBadge status={item.status} />
+                      </td>
+                      <td style={{ ...s.td, color: TEXT3, fontSize: '0.8rem' }}>
+                        {item.sourceType === 'scanner' ? 'Scanner' : 'Manual'}
+                      </td>
+                      <td style={{ ...s.td, textAlign: 'right' }}>
+                        <Link to={`/admin/content/${item.id}/edit`} style={s.rowAction}>
+                          Review
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-        </section>
+        </div>
 
-        <section style={styles.sidePanel}>
-          <h2 style={styles.sectionTitle}>Quick Actions</h2>
-          <div style={styles.actions}>
-            <Link to="/admin/content/new" style={styles.actionBtn}>Create Manual Entry</Link>
-            <Link to="/admin/content" style={styles.actionBtn}>Review Scanner Drafts</Link>
-            <Link to="/admin/movies" style={styles.actionBtn}>Open Movies Queue</Link>
-            <Link to="/admin/series" style={styles.actionBtn}>Open Series Queue</Link>
+        {/* Right column */}
+        <div style={s.rightCol}>
+
+          {/* Quick actions */}
+          <div style={s.card}>
+            <SectionHeader title="Quick Actions" />
+            <div style={s.quickActions}>
+              <Link to="/admin/content/new" style={s.quickActionPrimary}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                New Content
+              </Link>
+              <Link to="/admin/content" style={s.quickAction}>Scanner Drafts</Link>
+              <Link to="/admin/movies" style={s.quickAction}>Movies Queue</Link>
+              <Link to="/admin/series" style={s.quickAction}>Series Queue</Link>
+            </div>
+
+            {/* Scanner drafts count */}
+            {(dashboard.scannerDrafts || []).length > 0 && (
+              <div style={s.infoRow}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#f59e0b', flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <span style={{ color: TEXT2, fontSize: '0.82rem' }}>
+                  <strong style={{ color: '#f59e0b' }}>{dashboard.scannerDrafts.length}</strong> scanner drafts waiting for review
+                </span>
+              </div>
+            )}
           </div>
 
-          <div style={styles.noteCard}>
-            <span style={styles.sectionEyebrow}>Scanner Drafts</span>
-            <p style={styles.noteText}>
-              {(dashboard.scannerDrafts || []).length
-                ? `${dashboard.scannerDrafts.length} scanner drafts are waiting for review.`
-                : 'No scanner drafts are currently waiting for review.'}
-            </p>
-          </div>
-
-          <div style={styles.normalizerCard}>
-            <div style={styles.normalizerHeader}>
-              <span style={styles.sectionEyebrow}>Media Normalizer</span>
-              <span style={{ ...styles.status, ...(normalizer.running ? styles.statusPublished : styles.statusDraft) }}>
-                {normalizer.running ? 'Running' : 'Stopped'}
+          {/* Media Normalizer */}
+          <div style={s.card}>
+            <div style={s.normalizerHeader}>
+              <h2 style={s.sectionTitle}>Media Normalizer</h2>
+              <span style={{ ...s.statusDot, ...(normalizer.running ? s.statusDotGreen : s.statusDotGray) }}>
+                {normalizer.running ? 'Running' : 'Idle'}
               </span>
             </div>
-            <p style={styles.noteText}>
-              One-by-one convert: MP4 container, H.264 video, AAC audio, faststart.
+
+            <p style={s.normalizerDesc}>
+              Converts media to MP4 / H.264 / AAC with faststart for smooth playback.
             </p>
-            <div style={styles.normalizerStats}>
-              <span>Converted: {normalizer.state?.stats?.converted || 0}</span>
-              <span>Already OK: {normalizer.state?.stats?.skippedAlreadyOk || 0}</span>
-              <span>Failed: {normalizer.state?.stats?.failed || 0}</span>
+
+            {/* Stats */}
+            <div style={s.normalizerStats}>
+              {[
+                { label: 'Converted', value: normalizer.state?.stats?.converted || 0 },
+                { label: 'Already OK', value: normalizer.state?.stats?.skippedAlreadyOk || 0 },
+                { label: 'Failed', value: normalizer.state?.stats?.failed || 0 },
+              ].map(({ label, value }) => (
+                <div key={label} style={s.normalizerStat}>
+                  <span style={s.normalizerStatVal}>{value}</span>
+                  <span style={s.normalizerStatLabel}>{label}</span>
+                </div>
+              ))}
             </div>
-            {currentProgress ? (
-              <div style={styles.progressCard}>
-                <div style={styles.progressTopRow}>
-                  <strong style={styles.progressTitle}>Current File</strong>
-                  <span style={styles.progressPercent}>{percentValue.toFixed(1)}%</span>
+
+            {/* Progress */}
+            {currentProgress && (
+              <div style={s.progressBlock}>
+                <div style={s.progressTopRow}>
+                  <span style={s.progressFile} title={currentProgress.filePath}>
+                    {currentProgress.filePath?.split('/').pop() || 'Processing...'}
+                  </span>
+                  <span style={s.progressPct}>{pct.toFixed(0)}%</span>
                 </div>
-                <div style={styles.progressPath} title={currentProgress.filePath}>{currentProgress.filePath}</div>
-                <div style={styles.progressBarTrack}>
-                  <div style={{ ...styles.progressBarFill, width: `${percentValue}%` }} />
+                <div style={s.progressTrack}>
+                  <div style={{ ...s.progressFill, width: `${pct}%` }} />
                 </div>
-                <div style={styles.progressMeta}>
+                <div style={s.progressMeta}>
                   <span>{formatSeconds(currentProgress.progressSeconds)} / {formatSeconds(currentProgress.durationSeconds)}</span>
-                  <span>Speed: {currentProgress.speed || '-'}</span>
-                  <span>Phase: {currentProgress.phase || '-'}</span>
+                  <span>Speed: {currentProgress.speed || '—'}</span>
+                  <span>{currentProgress.phase || ''}</span>
                 </div>
               </div>
-            ) : null}
-            <div style={styles.heroActions}>
+            )}
+
+            {/* Controls */}
+            <div style={s.normalizerControls}>
               <button
                 type="button"
-                style={styles.primaryAction}
-                onClick={() => handleNormalizerAction('start')}
+                style={{ ...s.normBtn, ...(normalizer.running || normalizerMutation.isPending ? s.normBtnDisabled : s.normBtnStart) }}
+                onClick={() => normalizerMutation.mutate('start')}
                 disabled={normalizerMutation.isPending || normalizer.running}
               >
-                Start Worker
+                Start
               </button>
               <button
                 type="button"
-                style={styles.secondaryAction}
-                onClick={() => handleNormalizerAction('stop')}
+                style={{ ...s.normBtn, ...(!normalizer.running || normalizerMutation.isPending ? s.normBtnDisabled : s.normBtnStop) }}
+                onClick={() => normalizerMutation.mutate('stop')}
                 disabled={normalizerMutation.isPending || !normalizer.running}
               >
-                Stop Worker
+                Stop
               </button>
             </div>
-            {normalizerError ? (
-              <div style={styles.errorInline}>
-                {normalizerError.message || 'Status check failed'}
-              </div>
-            ) : null}
-            <div style={styles.logBox}>
-              {(normalizer.recentLogLines || []).length
-                ? normalizer.recentLogLines.slice(-8).map((line, index) => (
-                  <div key={`${index}-${line}`}>{line}</div>
+
+            {normalizerError && (
+              <div style={s.errorInline}>{normalizerError.message || 'Status check failed'}</div>
+            )}
+
+            {/* Log */}
+            <div style={s.logBox}>
+              {(normalizer.recentLogLines || []).length > 0
+                ? normalizer.recentLogLines.slice(-8).map((line, i) => (
+                  <div key={i} style={s.logLine}>{line}</div>
                 ))
-                : <div>No runtime logs yet.</div>}
+                : <div style={{ color: TEXT3 }}>No logs yet.</div>
+              }
             </div>
           </div>
-        </section>
+
+        </div>
       </div>
     </div>
   );
-};
+}
 
-const styles = {
-  page: { display: 'grid', gap: '22px' },
-  heroCard: {
-    padding: '28px',
-    borderRadius: '32px',
-    background: 'linear-gradient(135deg, rgba(0,240,181,0.08), rgba(0,240,181,0.02))',
-    border: '1px solid rgba(255,255,255,0.08)',
+const ACCENT = '#6366f1';
+const ACCENT_LIGHT = 'rgba(99,102,241,0.1)';
+const SURFACE = '#111318';
+const SURFACE2 = '#181b22';
+const BORDER = 'rgba(255,255,255,0.07)';
+const TEXT = '#f1f5f9';
+const TEXT2 = '#94a3b8';
+const TEXT3 = '#475569';
+
+const s = {
+  page: { display: 'flex', flexDirection: 'column', gap: '20px' },
+
+  errorBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    background: 'rgba(239,68,68,0.1)',
+    border: '1px solid rgba(239,68,68,0.2)',
+    color: '#f87171',
+    fontSize: '0.875rem',
+  },
+
+  // Stats
+  statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr) auto',
-    gap: '18px',
-    alignItems: 'end',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '12px',
   },
-  heroCardTablet: {
-    gridTemplateColumns: '1fr',
-  },
-  heroCardMobile: {
+  statsGridMobile: { gridTemplateColumns: 'repeat(2, 1fr)' },
+  statCard: {
     padding: '20px',
-    gridTemplateColumns: '1fr',
+    borderRadius: '10px',
+    background: SURFACE,
+    border: `1px solid ${BORDER}`,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
   },
-  kicker: { display: 'inline-block', marginBottom: '10px', color: 'var(--accent-cyan)', textTransform: 'uppercase', letterSpacing: '0.16em', fontSize: '0.72rem', fontWeight: '700' },
-  heroTitle: { color: 'var(--text-primary)', maxWidth: '18ch' },
-  heroActions: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
-  primaryAction: { padding: '14px 20px', borderRadius: '999px', background: 'linear-gradient(135deg, var(--accent-cyan), #05d5a1)', color: '#000', fontWeight: '800', boxShadow: '0 12px 30px rgba(0, 240, 181, 0.24)' },
-  secondaryAction: { padding: '14px 20px', borderRadius: '999px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-primary)', fontWeight: '700' },
-  errorBox: { padding: '14px 18px', borderRadius: '18px', background: 'rgba(255, 90, 95, 0.12)', color: '#ff8a8a', border: '1px solid rgba(255, 90, 95, 0.24)' },
-  stats: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' },
-  statCard: { padding: '24px', borderRadius: '28px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '8px', transition: 'transform 0.2s, box-shadow 0.2s', cursor: 'default' },
-  statLabel: { color: 'var(--text-muted)', fontSize: '0.76rem', textTransform: 'uppercase', letterSpacing: '0.14em', fontWeight: '700' },
-  statValue: { fontSize: '2rem', fontWeight: '700', color: 'var(--text-primary)' },
-  statChange: { color: '#4ade80', fontSize: '0.86rem', fontWeight: '700' },
-  grid: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.5fr) 340px', gap: '22px' },
-  gridMobile: { gridTemplateColumns: '1fr' },
-  section: { padding: '24px', borderRadius: '28px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' },
-  sidePanel: { padding: '24px', borderRadius: '28px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '18px', alignContent: 'start' },
-  sectionHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'end', gap: '16px', marginBottom: '16px' },
-  sectionEyebrow: { display: 'inline-block', marginBottom: '6px', color: 'var(--accent-amber)', textTransform: 'uppercase', letterSpacing: '0.14em', fontSize: '0.72rem', fontWeight: '700' },
-  sectionTitle: { fontSize: '1.5rem', color: 'var(--text-primary)' },
-  viewAll: { color: 'var(--accent-cyan)', fontSize: '0.9rem', fontWeight: '700' },
-  tableWrap: { overflowX: 'auto' },
-  table: { width: '100%', borderCollapse: 'separate', borderSpacing: '0 10px' },
-  itemTitle: { display: 'block', color: 'var(--text-primary)' },
-  itemMeta: { display: 'block', color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '4px' },
-  status: { padding: '6px 10px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: '700', textTransform: 'capitalize', display: 'inline-flex' },
-  statusPublished: { background: 'rgba(34, 197, 94, 0.12)', color: '#4ade80' },
-  statusDraft: { background: 'rgba(234, 179, 8, 0.12)', color: '#facc15' },
-  editBtn: { padding: '8px 14px', background: 'rgba(255,255,255,0.08)', borderRadius: '999px', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: '700', display: 'inline-flex' },
-  actions: { display: 'grid', gap: '12px' },
-  actionBtn: { padding: '14px 18px', background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', borderRadius: '22px', fontWeight: '700', border: '1px solid rgba(255,255,255,0.08)' },
-  noteCard: { padding: '20px', borderRadius: '24px', background: 'linear-gradient(135deg, rgba(0,240,181,0.08), rgba(255,255,255,0.04))', border: '1px solid rgba(0,240,181,0.1)' },
-  noteText: { lineHeight: '1.8' },
-  normalizerCard: { padding: '20px', borderRadius: '24px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '12px' },
-  normalizerHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' },
-  normalizerStats: { display: 'grid', gap: '6px', color: 'var(--text-muted)', fontSize: '0.84rem' },
-  logBox: { marginTop: '6px', padding: '12px 16px', borderRadius: '12px', background: '#0d1117', border: '1px solid #30363d', maxHeight: '200px', overflowY: 'auto', fontSize: '0.8rem', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: '#00F0B5', lineHeight: '1.6', boxShadow: 'inset 0 4px 8px rgba(0,0,0,0.4)' },
-  errorInline: { padding: '8px 10px', borderRadius: '10px', background: 'rgba(255, 90, 95, 0.12)', color: '#ff8a8a', border: '1px solid rgba(255, 90, 95, 0.22)', fontSize: '0.82rem' },
-  progressCard: { padding: '10px 12px', borderRadius: '12px', background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '8px' },
-  progressTopRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' },
-  progressTitle: { color: 'var(--text-primary)', fontSize: '0.86rem' },
-  progressPercent: { color: '#4ade80', fontSize: '0.84rem', fontWeight: '700' },
-  progressPath: { color: 'var(--text-secondary)', fontSize: '0.72rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  progressBarTrack: { height: '8px', borderRadius: '999px', background: 'rgba(255,255,255,0.09)', overflow: 'hidden' },
-  progressBarFill: { height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, #22c55e, #84cc16)' },
-  progressMeta: { display: 'flex', justifyContent: 'space-between', gap: '10px', color: 'var(--text-muted)', fontSize: '0.72rem', flexWrap: 'wrap' },
-};
+  statCardAccent: {
+    background: ACCENT_LIGHT,
+    border: `1px solid rgba(99,102,241,0.2)`,
+  },
+  statLabel: { fontSize: '0.75rem', color: TEXT3, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' },
+  statValue: { fontSize: '1.75rem', fontWeight: '700', color: TEXT, lineHeight: 1 },
+  statSub: { fontSize: '0.75rem', color: TEXT2 },
 
-export default AdminDashboard;
+  // Layout
+  grid: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: '20px', alignItems: 'start' },
+  gridMobile: { gridTemplateColumns: '1fr' },
+  rightCol: { display: 'flex', flexDirection: 'column', gap: '16px' },
+
+  // Card
+  card: {
+    background: SURFACE,
+    border: `1px solid ${BORDER}`,
+    borderRadius: '10px',
+    padding: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+
+  // Section header
+  sectionHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' },
+  sectionTitle: { fontSize: '0.9rem', fontWeight: '600', color: TEXT, margin: 0 },
+  linkBtn: { fontSize: '0.8rem', color: ACCENT, fontWeight: '500', textDecoration: 'none' },
+
+  // Table
+  tableWrap: { overflowX: 'auto', margin: '0 -20px', padding: '0 20px' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' },
+  th: {
+    padding: '8px 12px',
+    textAlign: 'left',
+    fontSize: '0.72rem',
+    fontWeight: '600',
+    color: TEXT3,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    borderBottom: `1px solid ${BORDER}`,
+    whiteSpace: 'nowrap',
+  },
+  thNarrow: { width: '80px' },
+  thAction: { width: '60px' },
+  tr: { borderBottom: `1px solid ${BORDER}` },
+  td: { padding: '12px', verticalAlign: 'middle' },
+  itemTitle: { display: 'block', color: TEXT, fontWeight: '500', fontSize: '0.875rem', lineHeight: 1.3 },
+  itemMeta: { display: 'block', color: TEXT3, fontSize: '0.75rem', marginTop: '3px' },
+  typeChip: {
+    display: 'inline-block',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    background: SURFACE2,
+    color: TEXT2,
+    fontSize: '0.72rem',
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  badge: {
+    display: 'inline-block',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    fontSize: '0.72rem',
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  badgeGreen: { background: 'rgba(34,197,94,0.1)', color: '#4ade80' },
+  badgeYellow: { background: 'rgba(234,179,8,0.1)', color: '#facc15' },
+  rowAction: {
+    display: 'inline-block',
+    padding: '5px 10px',
+    borderRadius: '6px',
+    background: SURFACE2,
+    color: TEXT2,
+    fontSize: '0.78rem',
+    fontWeight: '500',
+    textDecoration: 'none',
+    border: `1px solid ${BORDER}`,
+  },
+  skeleton: {
+    height: '14px',
+    borderRadius: '4px',
+    background: 'rgba(255,255,255,0.06)',
+    animation: 'pulse 1.5s ease-in-out infinite',
+  },
+
+  // Quick actions
+  quickActions: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  quickActionPrimary: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    background: ACCENT,
+    color: '#fff',
+    fontSize: '0.85rem',
+    fontWeight: '600',
+    textDecoration: 'none',
+  },
+  quickAction: {
+    display: 'block',
+    padding: '9px 14px',
+    borderRadius: '8px',
+    background: SURFACE2,
+    color: TEXT2,
+    fontSize: '0.85rem',
+    fontWeight: '500',
+    textDecoration: 'none',
+    border: `1px solid ${BORDER}`,
+  },
+  infoRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '8px',
+    padding: '10px 12px',
+    borderRadius: '8px',
+    background: 'rgba(245,158,11,0.06)',
+    border: '1px solid rgba(245,158,11,0.15)',
+  },
+
+  // Normalizer
+  normalizerHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' },
+  normalizerDesc: { fontSize: '0.8rem', color: TEXT3, lineHeight: 1.6, margin: 0 },
+  normalizerStats: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '8px' },
+  normalizerStat: {
+    padding: '10px',
+    borderRadius: '8px',
+    background: SURFACE2,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    alignItems: 'center',
+  },
+  normalizerStatVal: { fontSize: '1.1rem', fontWeight: '700', color: TEXT },
+  normalizerStatLabel: { fontSize: '0.68rem', color: TEXT3, textTransform: 'uppercase', letterSpacing: '0.06em' },
+
+  statusDot: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '4px 10px',
+    borderRadius: '999px',
+    fontSize: '0.72rem',
+    fontWeight: '600',
+  },
+  statusDotGreen: { background: 'rgba(34,197,94,0.1)', color: '#4ade80' },
+  statusDotGray: { background: SURFACE2, color: TEXT3 },
+
+  // Progress
+  progressBlock: { display: 'flex', flexDirection: 'column', gap: '8px' },
+  progressTopRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' },
+  progressFile: { fontSize: '0.78rem', color: TEXT2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 },
+  progressPct: { fontSize: '0.78rem', fontWeight: '700', color: '#4ade80', flexShrink: 0 },
+  progressTrack: { height: '6px', borderRadius: '999px', background: SURFACE2, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: '999px', background: 'linear-gradient(90deg, #22c55e, #84cc16)', transition: 'width 0.5s ease' },
+  progressMeta: { display: 'flex', gap: '12px', fontSize: '0.72rem', color: TEXT3, flexWrap: 'wrap' },
+
+  // Normalizer controls
+  normalizerControls: { display: 'flex', gap: '8px' },
+  normBtn: {
+    flex: 1,
+    padding: '9px',
+    borderRadius: '8px',
+    fontSize: '0.82rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    border: 'none',
+  },
+  normBtnStart: { background: 'rgba(34,197,94,0.12)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.2)' },
+  normBtnStop: { background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' },
+  normBtnDisabled: { background: SURFACE2, color: TEXT3, cursor: 'not-allowed', border: `1px solid ${BORDER}` },
+
+  errorInline: {
+    padding: '8px 12px',
+    borderRadius: '6px',
+    background: 'rgba(239,68,68,0.08)',
+    color: '#f87171',
+    fontSize: '0.78rem',
+    border: '1px solid rgba(239,68,68,0.15)',
+  },
+
+  // Log
+  logBox: {
+    padding: '12px',
+    borderRadius: '8px',
+    background: '#0d1117',
+    border: '1px solid #21262d',
+    maxHeight: '160px',
+    overflowY: 'auto',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: '0.72rem',
+    lineHeight: 1.7,
+    color: '#7ee787',
+  },
+  logLine: { wordBreak: 'break-all' },
+};

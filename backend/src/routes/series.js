@@ -12,14 +12,10 @@ const seriesQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(24),
 });
 
-function getSeries() {
-  return listItems({ type: 'series', status: 'published' }).then((result) => result.items);
-}
-
 router.get('/', validateQuery(seriesQuerySchema), async (req, res, next) => {
   const { genre, year, sort, page, limit } = req.validatedQuery;
   const filters = { type: 'series', status: 'published' };
-  
+
   if (genre) filters.genre = genre;
   if (year) filters.year = year;
 

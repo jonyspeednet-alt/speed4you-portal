@@ -131,12 +131,14 @@ router.get('/latest', asyncRoute(async (req, res) => {
 router.get('/popular', asyncRoute(async (req, res) => {
   const limit = normalizePositiveInt(req.query.limit, 10, { min: 1, max: 100 });
   const items = await getPublishedItems({}, 0, limit, 'popular');
+  setApiCacheHeaders(res, req.originalUrl);
   res.json({ items });
 }));
 
 router.get('/trending', asyncRoute(async (req, res) => {
   const limit = normalizePositiveInt(req.query.limit, 10, { min: 1, max: 100 });
   const items = await getPublishedItems({}, 0, limit, 'trending');
+  setApiCacheHeaders(res, req.originalUrl);
   res.json({ items });
 }));
 

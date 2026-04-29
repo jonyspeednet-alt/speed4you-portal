@@ -131,7 +131,7 @@ function PlayerPage() {
   const [scrubTime, setScrubTime] = useState(0);
   const [hasOptimizedFallbacked, setHasOptimizedFallbacked] = useState(false);
   const streamUrlBaseRef = useRef('');
-  
+
   const swipeStartRef = useRef(null);
   const swipeCurrentRef = useRef(null);
   const swipeTimeoutRef = useRef(null);
@@ -467,12 +467,12 @@ function PlayerPage() {
     return () => clearTimeout(hideTimerRef.current);
   }, [isPlaying, isScrubbing, showControls, isHoveringControls]);
 
-  const playNextEpisode = () => {
+  const playNextEpisode = useCallback(() => {
     setAutoPlayCountdown(null);
     if (content?.type === 'series') {
       navigate(`/play/${contentId}?season=${content.season}&episode=${content.episode + 1}`);
     }
-  };
+  }, [content?.type, content?.season, content?.episode, contentId, navigate]);
 
   useEffect(() => {
     if (autoPlayCountdown === null) return;
@@ -484,7 +484,7 @@ function PlayerPage() {
       setAutoPlayCountdown(prev => prev - 1);
     }, 1000);
     return () => clearTimeout(timer);
-  }, [autoPlayCountdown]);
+  }, [autoPlayCountdown, playNextEpisode]);
 
   const persistProgress = useCallback(async (position, duration) => {
     if (!content?.type || !contentId || !Number.isFinite(position) || position <= 0) {
@@ -600,7 +600,7 @@ function PlayerPage() {
       document.removeEventListener('leavepictureinpicture', onPictureInPictureChange);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [activeDuration, content?.type, contentId, persistProgress]);
+  }, [activeDuration, content?.type, contentId, navigate, persistProgress, volume]);
 
   const handleMouseMove = () => {
     setShowControls(true);
@@ -652,7 +652,7 @@ function PlayerPage() {
       try {
         await videoRef.current?.requestFullscreen?.();
         if (isMobile && window.screen?.orientation?.lock) {
-          await window.screen.orientation.lock('landscape').catch(() => {});
+          await window.screen.orientation.lock('landscape').catch(() => { });
         }
       } catch (err) {
         // Ignore fullscreen errors
@@ -737,11 +737,11 @@ function PlayerPage() {
     if (!swipeStartRef.current) return;
     const touch = event.touches[0];
     if (!touch) return;
-    
+
     swipeCurrentRef.current = { x: touch.clientX, y: touch.clientY };
     const dx = swipeCurrentRef.current.x - swipeStartRef.current.x;
     const dy = swipeCurrentRef.current.y - swipeStartRef.current.y;
-    
+
     if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
       swipeHandledRef.current = true;
       const rect = event.currentTarget.getBoundingClientRect();
@@ -756,7 +756,7 @@ function PlayerPage() {
       const rect = event.currentTarget.getBoundingClientRect();
       const isRightSide = swipeStartRef.current.x > rect.left + rect.width / 2;
       const change = -(dy / rect.height);
-      
+
       if (isRightSide) {
         const newVolume = Math.max(0, Math.min(100, volume + change * 200));
         setVolume(newVolume);
@@ -767,7 +767,7 @@ function PlayerPage() {
         setBrightness(newBrightness);
         setToastData({ icon: 'sun', value: Math.round(newBrightness * 100) });
       }
-      
+
       swipeStartRef.current.y = touch.clientY;
       if (swipeTimeoutRef.current) clearTimeout(swipeTimeoutRef.current);
       swipeTimeoutRef.current = setTimeout(() => setToastData(null), 1000);
@@ -870,7 +870,7 @@ function PlayerPage() {
           setIsPlaying(true);
           scheduleInvisibleVideoCheck();
           if (isMobile && window.screen?.orientation?.lock) {
-            window.screen.orientation.lock('landscape').catch(() => {});
+            window.screen.orientation.lock('landscape').catch(() => { });
           }
         }}
         onPause={() => {
@@ -1142,7 +1142,7 @@ function PlayerPage() {
           }}
         >
           {/* 1. Top bar: back + title */}
-          <div style={{...styles.mobileTopBar, pointerEvents: showControls ? 'auto' : 'none'}}>
+          <div style={{ ...styles.mobileTopBar, pointerEvents: showControls ? 'auto' : 'none' }}>
             <Link to="/" style={styles.mobileBackBtn} aria-label="Back to portal">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M19 12H5M12 5l-7 7 7 7" />
@@ -1162,7 +1162,7 @@ function PlayerPage() {
 
           {/* 2. Center play / skip buttons */}
           <div style={styles.mobileCenterControls}>
-            <button style={{...styles.mobileGhostControl, pointerEvents: showControls ? 'auto' : 'none'}} onClick={() => skipBy(-10)} aria-label="Rewind 10 seconds">
+            <button style={{ ...styles.mobileGhostControl, pointerEvents: showControls ? 'auto' : 'none' }} onClick={() => skipBy(-10)} aria-label="Rewind 10 seconds">
               <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor" aria-hidden="true">
                 <path d="M11 19L2 12l9-7v14z" /><path d="M22 19l-9-7 9-7v14z" />
               </svg>
@@ -1170,7 +1170,7 @@ function PlayerPage() {
             </button>
 
             <button
-              style={{...styles.mobilePlayControl, pointerEvents: showControls ? 'auto' : 'none'}}
+              style={{ ...styles.mobilePlayControl, pointerEvents: showControls ? 'auto' : 'none' }}
               onClick={togglePlayback}
               onMouseDown={startHoldSpeedBoost} onMouseUp={endHoldSpeedBoost}
               onMouseLeave={endHoldSpeedBoost} onTouchStart={startHoldSpeedBoost} onTouchEnd={endHoldSpeedBoost}
@@ -1182,7 +1182,7 @@ function PlayerPage() {
               }
             </button>
 
-            <button style={{...styles.mobileGhostControl, pointerEvents: showControls ? 'auto' : 'none'}} onClick={() => skipBy(10)} aria-label="Skip 10 seconds">
+            <button style={{ ...styles.mobileGhostControl, pointerEvents: showControls ? 'auto' : 'none' }} onClick={() => skipBy(10)} aria-label="Skip 10 seconds">
               <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor" aria-hidden="true">
                 <path d="M13 19l9-7-9-7v14z" /><path d="M2 19l9-7-9-7v14z" />
               </svg>
@@ -1190,7 +1190,7 @@ function PlayerPage() {
             </button>
 
             {content.type === 'series' && (
-              <button onClick={playNextEpisode} aria-label="Next Episode" style={{...styles.mobileGhostControl, marginLeft: '8px', pointerEvents: showControls ? 'auto' : 'none'}}>
+              <button onClick={playNextEpisode} aria-label="Next Episode" style={{ ...styles.mobileGhostControl, marginLeft: '8px', pointerEvents: showControls ? 'auto' : 'none' }}>
                 <svg viewBox="0 0 24 24" width="36" height="36" fill="currentColor" aria-hidden="true">
                   <path d="M5 4l10 8-10 8V4z" /><path d="M19 4h-2v16h2V4z" />
                 </svg>
@@ -1199,90 +1199,90 @@ function PlayerPage() {
             )}
           </div>
 
-          <div style={{...styles.mobileBottomSection, pointerEvents: showControls ? 'auto' : 'none'}}>
+          <div style={{ ...styles.mobileBottomSection, pointerEvents: showControls ? 'auto' : 'none' }}>
 
-          {/* 3. Scrubber + time */}
-          <div style={styles.mobileScrubRow}>
-            <div style={styles.mobileScrubberWrap}>
-              <div style={styles.mobileScrubberTrack}>
-                <div style={{ ...styles.mobileBufferedTrack, width: `${bufferedPercent}%` }} />
-                <div style={{ ...styles.mobileProgressTrack, width: `${progressPercent}%` }} />
+            {/* 3. Scrubber + time */}
+            <div style={styles.mobileScrubRow}>
+              <div style={styles.mobileScrubberWrap}>
+                <div style={styles.mobileScrubberTrack}>
+                  <div style={{ ...styles.mobileBufferedTrack, width: `${bufferedPercent}%` }} />
+                  <div style={{ ...styles.mobileProgressTrack, width: `${progressPercent}%` }} />
+                </div>
+                <input
+                  type="range" min="0" max={Math.max(0, activeDuration)} step="0.1"
+                  value={Math.min(activeTime, Math.max(0, activeDuration))}
+                  onMouseDown={handleScrubStart} onTouchStart={handleScrubStart}
+                  onInput={handleScrubChange} onChange={handleScrubEnd}
+                  style={styles.mobileScrubber}
+                />
               </div>
-              <input
-                type="range" min="0" max={Math.max(0, activeDuration)} step="0.1"
-                value={Math.min(activeTime, Math.max(0, activeDuration))}
-                onMouseDown={handleScrubStart} onTouchStart={handleScrubStart}
-                onInput={handleScrubChange} onChange={handleScrubEnd}
-                style={styles.mobileScrubber}
-              />
+              <div style={styles.mobileTimeRow}>
+                <span style={styles.mobileTimeText}>{formatTime(activeTime)}</span>
+                <span style={styles.mobileTimeText}>{formatTime(activeDuration)}</span>
+              </div>
             </div>
-            <div style={styles.mobileTimeRow}>
-              <span style={styles.mobileTimeText}>{formatTime(activeTime)}</span>
-              <span style={styles.mobileTimeText}>{formatTime(activeDuration)}</span>
-            </div>
-          </div>
 
-          {/* 4. Secondary action row */}
-          <div style={styles.mobileActionRow}>
-            {/* Mute */}
-            <button style={styles.mobileActionBtn} onClick={() => setIsMuted((c) => !c)} aria-label={isMuted ? 'Unmute' : 'Mute'}>
-              {isMuted
-                ? <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.796 8.796 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06A8.99 8.99 0 0017.73 18L19 19.27 20.27 18 5.27 3 4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
-                : <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02z" /></svg>
-              }
-              <span style={styles.mobileActionLabel}>{isMuted ? 'Unmute' : 'Mute'}</span>
-            </button>
-
-            {/* Fullscreen */}
-            <button style={styles.mobileActionBtn} onClick={toggleFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
-              {isFullscreen
-                ? <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" /></svg>
-                : <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" /></svg>
-              }
-              <span style={styles.mobileActionLabel}>{isFullscreen ? 'Exit' : 'Full'}</span>
-            </button>
-
-            {/* Speed */}
-            <label style={styles.mobileActionBtn} aria-label="Playback speed">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-                <path d="M10 8v8l6-4-6-4zm6.5-4.5C14.8 2.2 12.5 1.5 10 1.5 5.3 1.5 1.5 5.3 1.5 10S5.3 18.5 10 18.5c4.7 0 8.5-3.8 8.5-8.5 0-1.3-.3-2.5-.8-3.6l-1.2 1.2c.3.8.5 1.6.5 2.4 0 3.9-3.1 7-7 7s-7-3.1-7-7 3.1-7 7-7c1.4 0 2.7.4 3.8 1.1l1.2-1.1z" />
-              </svg>
-              <span style={styles.mobileActionLabel}>{playbackRate}x</span>
-              <select value={String(playbackRate)} onChange={(e) => setPlaybackRate(Number(e.target.value))} style={styles.mobileHiddenSelect} aria-label="Select playback speed">
-                {PLAYBACK_RATES.map((r) => <option key={r} value={r}>{r}x</option>)}
-              </select>
-            </label>
-
-            {/* Audio Boost */}
-            <button
-              style={{ ...styles.mobileActionBtn, ...(isAudioBoostEnabled ? styles.mobileActionBtnActive : {}) }}
-              onClick={() => setIsAudioBoostEnabled((c) => !c)}
-              aria-label={isAudioBoostEnabled ? 'Disable audio boost' : 'Enable audio boost'}
-              aria-pressed={isAudioBoostEnabled}
-            >
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-                <path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z" />
-              </svg>
-              <span style={styles.mobileActionLabel}>Boost</span>
-            </button>
-
-            {/* PiP */}
-            {canUsePictureInPicture && (
-              <button style={styles.mobileActionBtn} onClick={togglePictureInPicture} aria-label={isPictureInPicture ? 'Exit PiP' : 'Picture in picture'}>
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-                  <path d="M19 7h-8v6h8V7zm2-4H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" />
-                </svg>
-                <span style={styles.mobileActionLabel}>PiP</span>
+            {/* 4. Secondary action row */}
+            <div style={styles.mobileActionRow}>
+              {/* Mute */}
+              <button style={styles.mobileActionBtn} onClick={() => setIsMuted((c) => !c)} aria-label={isMuted ? 'Unmute' : 'Mute'}>
+                {isMuted
+                  ? <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.796 8.796 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06A8.99 8.99 0 0017.73 18L19 19.27 20.27 18 5.27 3 4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
+                  : <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02z" /></svg>
+                }
+                <span style={styles.mobileActionLabel}>{isMuted ? 'Unmute' : 'Mute'}</span>
               </button>
-            )}
-          </div>
 
-          {/* 5. Meta badges */}
-          <div style={styles.mobileMetaRow}>
-            <div style={styles.metaBadge}>{content.type === 'series' ? `S${content.season}E${content.episode}` : 'MOVIE'}</div>
-            <div style={styles.metaBadge}>{qualityLabel}</div>
-            <div style={styles.metaBadge}>{bufferHealth}</div>
-          </div>
+              {/* Fullscreen */}
+              <button style={styles.mobileActionBtn} onClick={toggleFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+                {isFullscreen
+                  ? <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" /></svg>
+                  : <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" /></svg>
+                }
+                <span style={styles.mobileActionLabel}>{isFullscreen ? 'Exit' : 'Full'}</span>
+              </button>
+
+              {/* Speed */}
+              <label style={styles.mobileActionBtn} aria-label="Playback speed">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+                  <path d="M10 8v8l6-4-6-4zm6.5-4.5C14.8 2.2 12.5 1.5 10 1.5 5.3 1.5 1.5 5.3 1.5 10S5.3 18.5 10 18.5c4.7 0 8.5-3.8 8.5-8.5 0-1.3-.3-2.5-.8-3.6l-1.2 1.2c.3.8.5 1.6.5 2.4 0 3.9-3.1 7-7 7s-7-3.1-7-7 3.1-7 7-7c1.4 0 2.7.4 3.8 1.1l1.2-1.1z" />
+                </svg>
+                <span style={styles.mobileActionLabel}>{playbackRate}x</span>
+                <select value={String(playbackRate)} onChange={(e) => setPlaybackRate(Number(e.target.value))} style={styles.mobileHiddenSelect} aria-label="Select playback speed">
+                  {PLAYBACK_RATES.map((r) => <option key={r} value={r}>{r}x</option>)}
+                </select>
+              </label>
+
+              {/* Audio Boost */}
+              <button
+                style={{ ...styles.mobileActionBtn, ...(isAudioBoostEnabled ? styles.mobileActionBtnActive : {}) }}
+                onClick={() => setIsAudioBoostEnabled((c) => !c)}
+                aria-label={isAudioBoostEnabled ? 'Disable audio boost' : 'Enable audio boost'}
+                aria-pressed={isAudioBoostEnabled}
+              >
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+                  <path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z" />
+                </svg>
+                <span style={styles.mobileActionLabel}>Boost</span>
+              </button>
+
+              {/* PiP */}
+              {canUsePictureInPicture && (
+                <button style={styles.mobileActionBtn} onClick={togglePictureInPicture} aria-label={isPictureInPicture ? 'Exit PiP' : 'Picture in picture'}>
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+                    <path d="M19 7h-8v6h8V7zm2-4H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" />
+                  </svg>
+                  <span style={styles.mobileActionLabel}>PiP</span>
+                </button>
+              )}
+            </div>
+
+            {/* 5. Meta badges */}
+            <div style={styles.mobileMetaRow}>
+              <div style={styles.metaBadge}>{content.type === 'series' ? `S${content.season}E${content.episode}` : 'MOVIE'}</div>
+              <div style={styles.metaBadge}>{qualityLabel}</div>
+              <div style={styles.metaBadge}>{bufferHealth}</div>
+            </div>
           </div>
         </div>
       )}
@@ -1331,7 +1331,7 @@ const styles = {
     borderRadius: '16px', fontSize: '1.5rem', fontWeight: 'bold',
     zIndex: 20, pointerEvents: 'none', backdropFilter: 'blur(8px)',
   },
-  
+
   /* new ripple */
   rippleOverlay: {
     position: 'absolute', top: 0, bottom: 0, width: '50%', zIndex: 20,
@@ -1347,7 +1347,7 @@ const styles = {
     color: '#fff', animation: 'ripplePop 0.4s ease-out forwards',
   },
   rippleText: { fontSize: '0.85rem', fontWeight: 'bold', marginTop: '4px' },
-  
+
   /* new toast */
   toastContainer: {
     position: 'absolute', top: '40px', left: '50%', transform: 'translateX(-50%)',

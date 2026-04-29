@@ -4,7 +4,7 @@ import searchService from '../services/searchService';
 import { useBreakpoint, useRecentlyViewed } from '../hooks';
 import WatchlistButton from '../components/ui/WatchlistButton';
 
-const posterFallback = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400';
+const posterFallback = '/portal/assets/poster-placeholder.svg';
 const languageOptions = ['All', 'English', 'Hindi', 'Bengali', 'Korean', 'Japanese'];
 const typeOptions = ['all', 'movie', 'series'];
 
@@ -147,12 +147,12 @@ function SearchPage() {
                 title="Voice search"
               >
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
                 </svg>
               </button>
             )}
             {query && (
-              <button onClick={resetSearch} style={styles.clearBtn}>
+              <button type="button" onClick={resetSearch} style={styles.clearBtn}>
                 Clear
               </button>
             )}

@@ -12,14 +12,10 @@ const moviesQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(24),
 });
 
-function getMovies() {
-  return listItems({ type: 'movie', status: 'published' }).then((result) => result.items);
-}
-
 router.get('/', validateQuery(moviesQuerySchema), async (req, res, next) => {
   const { genre, year, sort, page, limit } = req.validatedQuery;
   const filters = { type: 'movie', status: 'published' };
-  
+
   if (genre) filters.genre = genre;
   if (year) filters.year = year;
 

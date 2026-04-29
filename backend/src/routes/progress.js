@@ -46,7 +46,21 @@ router.post('/', requireStateUser, async (req, res, next) => {
       throw new AppError('contentType and contentId required', 400, 'BAD_REQUEST');
     }
 
-    await upsertWatchProgress(userId, { contentType, contentId, position, duration, completed: false });
+    const numericContentId = Number(contentId);
+    if (!Number.isFinite(numericContentId) || numericContentId <= 0) {
+      throw new AppError('contentId must be a positive number', 400, 'BAD_REQUEST');
+    }
+
+    const numericPosition = Number(position) || 0;
+    const numericDuration = Number(duration) || 0;
+
+    await upsertWatchProgress(userId, {
+      contentType,
+      contentId: numericContentId,
+      position: numericPosition,
+      duration: numericDuration,
+      completed: false,
+    });
 
     res.json({ success: true });
   } catch (error) {
@@ -57,7 +71,7 @@ router.post('/', requireStateUser, async (req, res, next) => {
 async function buildContinueWatching(userId) {
   const entries = await getWatchProgressEntries(userId, { incompleteOnly: true });
   const activeEntries = entries.filter((item) => Number(item.position) > 0);
-  
+
   if (!activeEntries.length) {
     return [];
   }

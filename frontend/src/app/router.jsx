@@ -37,9 +37,9 @@ function withRouteFallback(element, routeType = 'default') {
         );
       default:
         return (
-          <div style={{ 
-            minHeight: '40vh', 
-            display: 'grid', 
+          <div style={{
+            minHeight: '40vh',
+            display: 'grid',
             placeItems: 'center',
             color: 'rgba(255,255,255,0.72)',
             letterSpacing: '0.04em',
@@ -101,6 +101,11 @@ const router = createHashRouter([
         element: withRouteFallback(<PlayerPage />, 'default'),
       },
       {
+        // Alias for episode navigation
+        path: 'play/:contentId',
+        element: withRouteFallback(<PlayerPage />, 'default'),
+      },
+      {
         path: 'tv',
         element: withRouteFallback(<TVPage />, 'browse'),
       },
@@ -142,6 +147,10 @@ const router = createHashRouter([
       {
         path: 'series',
         element: withRouteFallback(<ContentLibraryPage />, 'browse'),
+      },
+      {
+        path: 'users',
+        element: <Navigate to="/admin" replace />,
       },
       {
         path: '*',
